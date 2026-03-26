@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.Events;
 
 public class IsoDroneController : MonoBehaviour
 {
@@ -8,6 +10,17 @@ public class IsoDroneController : MonoBehaviour
     public float smoothTime = 0.2f;
     public float hoverAmplitude = 0.15f;
     public float hoverFrequency = 2.5f;
+
+    [Header("输入")]
+    [Tooltip("为 true 时，点击在 UI 上不会下发移动指令（避免点按钮时误移动）")]
+    public bool ignoreClicksOverUI = true;
+
+    [Header("事件 — 锚点/任务等")]
+    [Tooltip("每次点击地图设置新目的地时触发，参数为世界坐标")]
+    public UnityEvent<Vector2> onDestinationSet;
+
+    [Tooltip("无人机到达当前目的地并停稳时触发")]
+    public UnityEvent onArrivedAtDestination;
 
     private Vector2 targetWorldPos;
     private Vector2 waypoint;
@@ -29,6 +42,9 @@ public class IsoDroneController : MonoBehaviour
     {
         if (Input.GetMouseButtonDown(0))
         {
+            if (ignoreClicksOverUI && EventSystem.current != null &&
+                EventSystem.current.IsPointerOverGameObject())
+                return;
             CalculateIsoPath();
         }
         ApplyHover();
@@ -49,6 +65,8 @@ public class IsoDroneController : MonoBehaviour
 
         isMovingToWaypoint = true;
         isMovingToTarget = true;
+
+        onDestinationSet?.Invoke(targetWorldPos);
     }
 
     void FixedUpdate()
@@ -84,6 +102,7 @@ public class IsoDroneController : MonoBehaviour
             {
                 isMovingToTarget = false;
                 currentVelocity = Vector2.zero;
+                onArrivedAtDestination?.Invoke();
             }
         }
 
