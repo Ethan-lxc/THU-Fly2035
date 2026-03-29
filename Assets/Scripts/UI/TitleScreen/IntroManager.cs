@@ -15,6 +15,7 @@ using TMPro;
 /// <item><b>阶段 3 — 过渡：</b>可选开头黑屏占位 → 由暗变亮 → 预留动画/占位等待 → BGM 与可选 Animator → 由亮变暗 → 淡出清屏；过渡面板 CanvasGroup + 自定义 BGM。</item>
 /// <item><b>阶段 4 — 主菜单：</b>由暗至明淡入；开始按钮可闪烁；开始/退出；BGM 可延续；按钮独立点击音效。</item>
 /// </list>
+/// <para>场景约定：<b>阶段 1～4 的 UI 与编排</b>应仅放在开场场景（如 <c>TitleScene</c>）中，与可玩内容场景（<see cref="gameSceneName"/>，如 <c>GameScene</c>）分离，避免 UI 射线与游戏内输入/地面点击互相穿透。点击开始后由 <see cref="OnStartClicked"/> 加载游戏场景。</para>
 /// 汉字：主字体由 narrativeFontOverride 或 TMP 默认字体担任；中文字形经 <see cref="UiCjkFontProvider"/> 挂入 fallback。
 /// </summary>
 public class IntroManager : MonoBehaviour
@@ -26,13 +27,27 @@ public class IntroManager : MonoBehaviour
 
     [Header("全局 · 场景与根节点")]
     [Tooltip("开始游戏要加载的场景名；与当前场景同名则只关闭 UI")]
-    public string gameSceneName = "SampleScene";
+    public string gameSceneName = "GameScene";
 
-    [Tooltip("通常为 IntroCanvas；下挂四阶段 UI")]
+    [Tooltip("通常为 IntroCanvas；下挂阶段 1～4 UI；应置于开场场景 TitleScene")]
     public GameObject introUiRoot;
 
     [Tooltip("IntroCanvas 最底层全屏黑块，挡住背后 3D 场景；显示主菜单前保持；空则运行时创建")]
     public Image introGameBlocker;
+
+    [Header("加载游戏场景 · 显示进度（可选）")]
+    [Tooltip("IntroCanvas 下 DIY 的 Slider；场景中常保持勾选 Active 以便编辑。Awake 会先隐藏，仅在点击开始后、异步加载关卡时再显示")]
+    public Slider loadingSceneProgressSlider;
+
+    [Tooltip("可选：加载百分比文案；同样在开场流程中隐藏，加载时显示")]
+    public TextMeshProUGUI loadingSceneProgressText;
+
+    [Tooltip("可选：加载时全屏背景色/图；在 IntroCanvas 下设为 Stretch 全屏，颜色在 Image 上调整；层级需在 Slider 之上（Hierarchy 里排在 Slider 前面）以便条与字叠在上面")]
+    public Image loadingSceneBackdrop;
+
+    [Tooltip("进入游戏场景后全屏由暗变亮时长（秒），不受 timeScale 影响；≤0 关闭")] 
+    [Min(0f)]
+    public float gameSceneEntranceFadeSeconds = 0.85f;
 
     #endregion
 
@@ -356,6 +371,50 @@ public class IntroManager : MonoBehaviour
             if (transitionPanel != null) transitionPanel.SetActive(false);
             SetIntroGameBlockerVisible(true);
         }
+
+        HideLoadingSceneProgressUi();
+    }
+
+    void ResolveLoadingUiReferences()
+    {
+        if (introUiRoot == null) return;
+        if (loadingSceneProgressSlider == null)
+        {
+            var tr = introUiRoot.transform.Find("Slider");
+            if (tr != null)
+                loadingSceneProgressSlider = tr.GetComponent<Slider>();
+        }
+
+        if (loadingSceneProgressText == null)
+        {
+            var tr = introUiRoot.transform.Find("LoadingPercent");
+            if (tr != null)
+                loadingSceneProgressText = tr.GetComponent<TextMeshProUGUI>();
+        }
+
+        if (loadingSceneBackdrop == null)
+        {
+            var tr = introUiRoot.transform.Find("LoadingBackdrop");
+            if (tr != null)
+                loadingSceneBackdrop = tr.GetComponent<Image>();
+        }
+    }
+
+    void HideLoadingSceneProgressUi()
+    {
+        ResolveLoadingUiReferences();
+        if (loadingSceneBackdrop != null)
+            loadingSceneBackdrop.gameObject.SetActive(false);
+        if (loadingSceneProgressSlider != null)
+            loadingSceneProgressSlider.gameObject.SetActive(false);
+        if (loadingSceneProgressText != null)
+            loadingSceneProgressText.gameObject.SetActive(false);
+    }
+
+    IEnumerator HideLoadingUiDeferred()
+    {
+        yield return null;
+        HideLoadingSceneProgressUi();
     }
 
     void Start()
@@ -364,6 +423,9 @@ public class IntroManager : MonoBehaviour
         EnsureSfxSource();
         ConfigureMusicSourceOnly();
         WireButtons();
+
+        HideLoadingSceneProgressUi();
+        StartCoroutine(HideLoadingUiDeferred());
 
         if (debugSkipToMenu)
         {
@@ -1356,19 +1418,117 @@ public class IntroManager : MonoBehaviour
         if (stopBgmOnStartGame && musicSource != null && musicSource.isPlaying)
             musicSource.Stop();
         PlayMenuButtonClip(startButtonClickClip);
-        if (introUiRoot != null) introUiRoot.SetActive(false);
-        else if (menuPanel != null) menuPanel.SetActive(false);
 
         if (string.IsNullOrEmpty(gameSceneName))
         {
+            if (introUiRoot != null) introUiRoot.SetActive(false);
+            else if (menuPanel != null) menuPanel.SetActive(false);
             MainGameplayBgmController.PlayAllPending();
             return;
         }
 
-        if (SceneManager.GetActiveScene().name != gameSceneName)
-            SceneManager.LoadScene(gameSceneName);
-        else
+        if (SceneManager.GetActiveScene().name == gameSceneName)
+        {
+            if (introUiRoot != null) introUiRoot.SetActive(false);
+            else if (menuPanel != null) menuPanel.SetActive(false);
             MainGameplayBgmController.PlayAllPending();
+            return;
+        }
+
+        StartCoroutine(LoadGameSceneAsyncWithProgress());
+    }
+
+    IEnumerator LoadGameSceneAsyncWithProgress()
+    {
+        ResolveLoadingUiReferences();
+
+        if (loadingSceneBackdrop != null)
+        {
+            loadingSceneBackdrop.gameObject.SetActive(true);
+            PlaceLoadingBackdropBehindProgress();
+        }
+
+        if (loadingSceneProgressSlider != null)
+        {
+            loadingSceneProgressSlider.gameObject.SetActive(true);
+            loadingSceneProgressSlider.minValue = 0f;
+            loadingSceneProgressSlider.maxValue = 1f;
+            loadingSceneProgressSlider.value = 0f;
+            loadingSceneProgressSlider.interactable = false;
+        }
+
+        if (loadingSceneProgressText != null)
+        {
+            loadingSceneProgressText.gameObject.SetActive(true);
+            loadingSceneProgressText.text = "加载中 0%";
+        }
+
+        Canvas.ForceUpdateCanvases();
+
+        // Slider/Text 在 introUiRoot 下时不能关掉整棵 IntroCanvas，否则加载条一并被隐藏
+        if (narrativePanel != null) narrativePanel.SetActive(false);
+        if (menuPanel != null) menuPanel.SetActive(false);
+        if (promptPanel != null) promptPanel.SetActive(false);
+        if (transitionPanel != null) transitionPanel.SetActive(false);
+
+        var op = SceneManager.LoadSceneAsync(gameSceneName, LoadSceneMode.Single);
+        if (op == null)
+        {
+            if (gameSceneEntranceFadeSeconds > 0f)
+            {
+                GameplaySceneEntranceFader.DurationSeconds = gameSceneEntranceFadeSeconds;
+                GameplayBgmGate.PendingGameplayFadeIn = true;
+            }
+
+            SceneManager.LoadScene(gameSceneName);
+            yield break;
+        }
+
+        op.allowSceneActivation = false;
+        while (op.progress < 0.9f)
+        {
+            var t = Mathf.Clamp01(op.progress / 0.9f);
+            if (loadingSceneProgressSlider != null)
+                loadingSceneProgressSlider.value = t;
+            if (loadingSceneProgressText != null)
+                loadingSceneProgressText.text = $"加载中 {Mathf.RoundToInt(t * 100f)}%";
+            yield return null;
+        }
+
+        if (loadingSceneProgressSlider != null)
+            loadingSceneProgressSlider.value = 1f;
+        if (loadingSceneProgressText != null)
+            loadingSceneProgressText.text = "加载中 100%";
+
+        yield return null;
+
+        if (gameSceneEntranceFadeSeconds > 0f)
+        {
+            GameplaySceneEntranceFader.DurationSeconds = gameSceneEntranceFadeSeconds;
+            GameplayBgmGate.PendingGameplayFadeIn = true;
+        }
+
+        op.allowSceneActivation = true;
+        yield return op;
+    }
+
+    void PlaceLoadingBackdropBehindProgress()
+    {
+        if (loadingSceneBackdrop == null || introUiRoot == null) return;
+        var bdTr = loadingSceneBackdrop.transform;
+        if (bdTr.parent != introUiRoot.transform) return;
+
+        var parent = introUiRoot.transform;
+        var target = int.MaxValue;
+        if (loadingSceneProgressSlider != null && loadingSceneProgressSlider.transform.parent == parent)
+            target = Mathf.Min(target, loadingSceneProgressSlider.transform.GetSiblingIndex());
+        if (loadingSceneProgressText != null && loadingSceneProgressText.transform.parent == parent)
+            target = Mathf.Min(target, loadingSceneProgressText.transform.GetSiblingIndex());
+
+        if (target == int.MaxValue) return;
+        var iBd = bdTr.GetSiblingIndex();
+        if (iBd > target)
+            bdTr.SetSiblingIndex(target);
     }
 
     void OnQuitClicked()
