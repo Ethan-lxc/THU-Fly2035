@@ -9,6 +9,9 @@ public class AchievementPanelController : MonoBehaviour
     [Header("引用")]
     public Button toggleButton;
 
+    [Tooltip("可选；打开成就前关闭暂停/背包。空则打开时 FindObjectOfType")]
+    public GameplayHudLayout gameplayHudLayout;
+
     [Tooltip("成就面板根（建议带 CanvasGroup）")]
     public CanvasGroup panelCanvasGroup;
 
@@ -75,6 +78,12 @@ public class AchievementPanelController : MonoBehaviour
 
     public void SetOpen(bool open)
     {
+        if (open)
+        {
+            var hud = gameplayHudLayout != null ? gameplayHudLayout : FindObjectOfType<GameplayHudLayout>();
+            hud?.CloseOtherPanelsBeforeAchievement();
+        }
+
         _open = open;
         if (panelCanvasGroup != null)
         {

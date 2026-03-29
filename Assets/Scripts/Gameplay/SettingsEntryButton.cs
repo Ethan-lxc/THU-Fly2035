@@ -12,6 +12,9 @@ public class SettingsEntryButton : MonoBehaviour
     [Tooltip("场景中的 PauseMenuController")]
     public PauseMenuController pauseMenu;
 
+    [Tooltip("可选；用于打开设置前收起成就/背包。空则在点击时 FindObjectOfType")]
+    public GameplayHudLayout gameplayHudLayout;
+
     [Header("行为")]
     [Tooltip("若暂停菜单已打开时再次点击，是否关闭（toggle）")]
     public bool toggleIfAlreadyOpen = true;
@@ -43,8 +46,13 @@ public class SettingsEntryButton : MonoBehaviour
         }
 
         if (toggleIfAlreadyOpen && pauseMenu.IsOpen)
+        {
             pauseMenu.Hide();
-        else
-            pauseMenu.Show();
+            return;
+        }
+
+        var hud = gameplayHudLayout != null ? gameplayHudLayout : FindObjectOfType<GameplayHudLayout>();
+        hud?.ClosePanelsBeforePauseMenu();
+        pauseMenu.Show();
     }
 }

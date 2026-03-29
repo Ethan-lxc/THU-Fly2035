@@ -54,6 +54,11 @@ public static class UiCjkFontProvider
         var def = TMP_Settings.defaultFontAsset;
         if (def != null)
             EnsureCjkFallback(def, cjk);
+
+        // TextMeshPro 示例资源 Anton SDF 无中文；场景里若直接使用会导致缺字警告，此处一并挂上 fallback。
+        var anton = Resources.Load<TMP_FontAsset>("Fonts & Materials/Anton SDF");
+        if (anton != null)
+            EnsureCjkFallback(anton, cjk);
     }
 
     /// <summary>

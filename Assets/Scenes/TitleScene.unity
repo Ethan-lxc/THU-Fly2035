@@ -576,7 +576,7 @@ MonoBehaviour:
   loadingSceneProgressSlider: {fileID: 74854017}
   loadingSceneProgressText: {fileID: 620715000}
   loadingSceneBackdrop: {fileID: 11242095}
-  gameSceneEntranceFadeSeconds: 4
+  gameSceneEntranceFadeSeconds: 3
   narrativePanel: {fileID: 922015788}
   narrativeBackgroundImage: {fileID: 1998677479}
   narrativeBlackBacking: {fileID: 0}

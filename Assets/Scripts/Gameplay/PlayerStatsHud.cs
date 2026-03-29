@@ -39,8 +39,40 @@ public class PlayerStatsHud : MonoBehaviour
     {
         _pro = initialProfessionalism;
         _emo = initialEmotion;
+        EnsureCjkFallbackForTmpChildren();
         ApplyLabels();
         RefreshDisplay();
+        WarmCjkForCurrentHudText();
+    }
+
+    /// <summary>
+    /// 标签可能使用 Anton SDF 等不含 CJK 的字体；为 HUD 内 TMP 主字体挂上 <see cref="UiCjkFontProvider"/> 的 fallback。
+    /// </summary>
+    void EnsureCjkFallbackForTmpChildren()
+    {
+        var cjk = UiCjkFontProvider.GetOrCreateRuntimeCjkFontAsset();
+        if (cjk == null) return;
+
+        foreach (var tmp in GetComponentsInChildren<TextMeshProUGUI>(true))
+        {
+            if (tmp.font != null)
+                UiCjkFontProvider.EnsureCjkFallback(tmp.font, cjk);
+        }
+    }
+
+    void WarmCjkForCurrentHudText()
+    {
+        var cjk = UiCjkFontProvider.GetOrCreateRuntimeCjkFontAsset();
+        if (cjk == null) return;
+
+        var s = professionalismLabelText + emotionLabelText;
+        foreach (var tmp in GetComponentsInChildren<TextMeshProUGUI>(true))
+        {
+            if (!string.IsNullOrEmpty(tmp.text))
+                s += tmp.text;
+        }
+
+        UiCjkFontProvider.WarmAtlas(cjk, s);
     }
 
     void ApplyLabels()

@@ -9,6 +9,9 @@ public class InventoryPanelController : MonoBehaviour
     [Header("引用")]
     public Button toggleButton;
 
+    [Tooltip("可选；打开背包前关闭暂停/成就。空则打开时 FindObjectOfType")]
+    public GameplayHudLayout gameplayHudLayout;
+
     [Tooltip("背包面板根（建议带 CanvasGroup）")]
     public CanvasGroup panelCanvasGroup;
 
@@ -64,6 +67,12 @@ public class InventoryPanelController : MonoBehaviour
 
     public void SetOpen(bool open)
     {
+        if (open)
+        {
+            var hud = gameplayHudLayout != null ? gameplayHudLayout : FindObjectOfType<GameplayHudLayout>();
+            hud?.CloseOtherPanelsBeforeInventory();
+        }
+
         _open = open;
         if (panelCanvasGroup != null)
         {
