@@ -31,6 +31,9 @@ public class GameplayHudLayout : MonoBehaviour
     public AchievementPanelController achievementPanelController;
     public InventoryPanelController inventoryPanelController;
 
+    [Tooltip("全事件共用的奖励卡入口；各玩法只调 Offer，勿直接挂 RewardCardRevealPopup")]
+    public RewardCardOfferService rewardCardOfferService;
+
     [Header("点击 / 射线（解决设置等按钮点不到）")]
     [Tooltip("若 GameplayHUD 根 Rect 只有一小块，角落按钮在射线范围外；勾选时 Awake 将根 Rect 铺满父级，并尽量保持子物体在屏幕上的原位置（避免左侧 HUD 被摆出屏外）")]
     [SerializeField] bool stretchHudRootToFullScreen = true;

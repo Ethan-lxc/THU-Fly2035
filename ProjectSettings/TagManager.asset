@@ -50,6 +50,9 @@ TagManager:
   - name: bulding
     uniqueID: 2975182675
     locked: 0
-  - name: New Layer 4
+  - name: "\u52A8\u753B"
     uniqueID: 2186721221
+    locked: 0
+  - name: UI
+    uniqueID: 2738817503
     locked: 0

@@ -110,6 +110,21 @@ public class PlayerStatsHud : MonoBehaviour
         RefreshDisplay();
     }
 
+    public void AddProfessionalism(float delta)
+    {
+        _pro += delta;
+        RefreshDisplay();
+    }
+
+    public void AddEmotion(float delta)
+    {
+        _emo += delta;
+        RefreshDisplay();
+    }
+
+    public float Professionalism => _pro;
+    public float Emotion => _emo;
+
     void RefreshDisplay()
     {
         var fmt = decimalPlaces <= 0 ? "F0" : "F" + decimalPlaces;

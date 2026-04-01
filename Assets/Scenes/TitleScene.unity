@@ -667,7 +667,7 @@ MonoBehaviour:
   stopBgmWhenShowingMainMenu: 0
   stopBgmOnStartGame: 1
   sfxSource: {fileID: 0}
-  debugSkipToMenu: 1
+  debugSkipToMenu: 0
 --- !u!4 &527962088
 Transform:
   m_ObjectHideFlags: 0

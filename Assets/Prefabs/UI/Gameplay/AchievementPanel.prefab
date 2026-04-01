@@ -85,9 +85,9 @@ CanvasGroup:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1119357079705613220}
   m_Enabled: 1
-  m_Alpha: 1
-  m_Interactable: 1
-  m_BlocksRaycasts: 1
+  m_Alpha: 0
+  m_Interactable: 0
+  m_BlocksRaycasts: 0
   m_IgnoreParentGroups: 0
 --- !u!1 &1127710200093589146
 GameObject:
@@ -138,12 +138,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   toggleButton: {fileID: 0}
+  gameplayHudLayout: {fileID: 0}
   panelCanvasGroup: {fileID: 194549664523660348}
   panelFallbackRoot: {fileID: 0}
   scrollRect: {fileID: 8801555896702673628}
   contentRoot: {fileID: 5833150390087365536}
+  achievementCardViewer: {fileID: 0}
+  cellSize: {x: 78, y: 96}
+  cellSpacing: {x: 6, y: 6}
+  panelBackgroundSprite: {fileID: 0}
+  panelBackgroundTint: {r: 1, g: 1, b: 1, a: 1}
+  panelBackgroundImage: {fileID: 1458144167611501454}
+  emptySlotBackground: {r: 0.15, g: 0.15, b: 0.18, a: 0.85}
+  emptySlotSprite: {fileID: 0}
   achievementCardPrefab: {fileID: 0}
-  placeholderCardCount: 6
   startClosed: 1
 --- !u!1 &2430519404522204141
 GameObject:
@@ -475,7 +483,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1108232341895233380
 RectTransform:
   m_ObjectHideFlags: 0
@@ -675,11 +683,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Content: {fileID: 5833150390087365536}
-  m_Horizontal: 1
-  m_Vertical: 1
-  m_MovementType: 1
-  m_Elasticity: 0.1
-  m_Inertia: 1
+  m_Horizontal: 0
+  m_Vertical: 0
+  m_MovementType: 2
+  m_Elasticity: 0
+  m_Inertia: 0
   m_DecelerationRate: 0.135
   m_ScrollSensitivity: 1
   m_Viewport: {fileID: 1119934603999952505}
@@ -710,7 +718,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &2384130640654133891
 RectTransform:
   m_ObjectHideFlags: 0
@@ -828,7 +836,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 5833150390087365536}
-  - component: {fileID: 2613237240205906874}
   m_Layer: 5
   m_Name: Content
   m_TagString: Untagged
@@ -855,29 +862,3 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 300}
   m_Pivot: {x: 0, y: 1}
---- !u!114 &2613237240205906874
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9070365714091469263}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 59f8146938fff824cb5fd77236b75775, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_Padding:
-    m_Left: 0
-    m_Right: 0
-    m_Top: 0
-    m_Bottom: 0
-  m_ChildAlignment: 0
-  m_Spacing: 0
-  m_ChildForceExpandWidth: 1
-  m_ChildForceExpandHeight: 1
-  m_ChildControlWidth: 0
-  m_ChildControlHeight: 0
-  m_ChildScaleWidth: 0
-  m_ChildScaleHeight: 0
-  m_ReverseArrangement: 0

@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -27,6 +28,12 @@ public class InventoryPanelController : MonoBehaviour
     [Min(0)]
     public int placeholderSlotCount = 12;
 
+    [Tooltip("为 true 时不生成占位格子，仅显示 InventoryRuntime 中的线索")]
+    public bool runtimeInventoryOnly;
+
+    [Tooltip("空则 FindObjectOfType")]
+    public InventoryRuntime inventoryRuntime;
+
     [Header("行为")]
     public bool startClosed = true;
 
@@ -38,7 +45,14 @@ public class InventoryPanelController : MonoBehaviour
     {
         if (toggleButton != null)
             toggleButton.onClick.AddListener(Toggle);
-        BuildPlaceholders();
+        if (inventoryRuntime == null)
+            inventoryRuntime = FindObjectOfType<InventoryRuntime>();
+        if (!runtimeInventoryOnly)
+            BuildPlaceholders();
+        else
+            RefreshFromRuntime();
+        if (inventoryRuntime != null && runtimeInventoryOnly)
+            inventoryRuntime.OnChanged += RefreshFromRuntime;
         SetOpen(!startClosed);
     }
 
@@ -46,6 +60,8 @@ public class InventoryPanelController : MonoBehaviour
     {
         if (toggleButton != null)
             toggleButton.onClick.RemoveListener(Toggle);
+        if (inventoryRuntime != null && runtimeInventoryOnly)
+            inventoryRuntime.OnChanged -= RefreshFromRuntime;
     }
 
     void BuildPlaceholders()
@@ -82,5 +98,35 @@ public class InventoryPanelController : MonoBehaviour
         }
         else if (panelFallbackRoot != null)
             panelFallbackRoot.SetActive(open);
+    }
+
+    /// <summary>根据 <see cref="InventoryRuntime"/> 重新生成格子（需 slotPlaceholderPrefab 作为格子模板）。</summary>
+    public void RefreshFromRuntime()
+    {
+        if (contentRoot == null || slotPlaceholderPrefab == null)
+            return;
+
+        if (inventoryRuntime == null)
+            inventoryRuntime = FindObjectOfType<InventoryRuntime>();
+        if (inventoryRuntime == null)
+            return;
+
+        for (var i = contentRoot.childCount - 1; i >= 0; i--)
+            Destroy(contentRoot.GetChild(i).gameObject);
+
+        foreach (var clue in inventoryRuntime.Clues)
+        {
+            var go = Instantiate(slotPlaceholderPrefab, contentRoot);
+            var img = go.GetComponentInChildren<Image>();
+            if (img != null && clue.icon != null)
+            {
+                img.sprite = clue.icon;
+                img.enabled = true;
+            }
+
+            var tmp = go.GetComponentInChildren<TextMeshProUGUI>();
+            if (tmp != null && !string.IsNullOrEmpty(clue.title))
+                tmp.text = clue.title;
+        }
     }
 }
