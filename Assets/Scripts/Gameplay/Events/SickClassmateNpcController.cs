@@ -1,12 +1,17 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.Serialization;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Gameplay.Events
 {
     /// <summary>
-    /// 身体不适的同学 NPC：靠近按 E 打开分支对话（与同物体 SimpleMoodNpcInteractable 二选一，勿同时挂两个 IWorldInteractable）。
+    /// 身体不适同学 · 分支对白 NPC：靠近按 E 打开分支对话（与同物体其它 IWorldInteractable 二选一，勿同时挂两个）。
+    /// 指路事件请用 <see cref="DirectionGuideNpcController"/>。多名该类 NPC 须配置不同的 <see cref="progressPlayerPrefsKey"/> 与 <see cref="medicinePathRewardStorageKey"/>。
+    /// 未挂 Collider2D 时会自动添加 <see cref="CircleCollider2D"/>（Trigger）。
     /// </summary>
-    [RequireComponent(typeof(Collider2D))]
     public class SickClassmateNpcController : MonoBehaviour, IWorldInteractable
     {
         [Header("对话 UI")]
@@ -61,7 +66,7 @@ namespace Gameplay.Events
         [TextArea(1, 4)]
         [Tooltip("选 Q（食堂）后由同学说的台词")]
         [FormerlySerializedAs("lineDroneThanksForFood")]
-        public string lineNpcThanksForFood = "谢谢你的吃的，不过我觉得我更需要一些胃药";
+        public string lineNpcThanksForFood = "谢谢你的吃的，不过我觉得我更需要一些胃药。";
 
         [Header("打字机")]
         [Tooltip("NPC 等正文打字音效")]
@@ -87,19 +92,55 @@ namespace Gameplay.Events
         [Range(0f, 1f)]
         public float typewriterSfxVolume = 0.35f;
 
-        [Header("动画 / 提示（与同 SimpleMood 配置一致即可迁过来）")]
+        [Header("对话结算音乐")]
+        [Tooltip("成功弹出成就卡时播放（与 Offer 同时）；空则静音")]
+        public AudioClip rewardVictoryMusicClip;
+        [Tooltip("本会话未获得成就卡就结束对话时播放；空则静音")]
+        public AudioClip dialogueEndedWithoutRewardMusicClip;
+        [Range(0f, 1f)]
+        public float dialogueOutcomeMusicVolume = 0.85f;
+
+        [Header("动画 / 提示")]
+        [Tooltip("控制身体/序列图切换的 Animator；空则在本物体与子级上查找")]
         public Animator animator;
 
         public bool useFeelingBoolParameter = true;
         public string feelingGoodBoolParameter = "IsFeelingGood";
 
+        [Tooltip("勾选后会对 unwell/happy 状态名执行 Play；可与 Bool 同时勾选（寻路靠 Bool 过渡时也能生效）。")]
         public bool useAnimatorPlayStates;
         public string unwellStateName = "Unwell";
         public string happyStateName = "Happy";
         public int animatorLayer;
 
+        [Header("头顶提示")]
+        [Tooltip("头顶提示根物体（可仅为一张图）；显隐由本脚本与靠近高亮控制。可与 promptBobbingTarget 为同一物体。")]
         public GameObject promptRoot;
+
         public Transform promptAnchor;
+
+        [Tooltip("参与上下浮动的 Transform，一般为 NPC 上方那张 Sprite/图；空则对 promptRoot 根变换浮动")]
+        public Transform promptBobbingTarget;
+
+        [Tooltip("关闭则不再摆动（仍控制显隐）。用 unscaled 时间，对白 timeScale=0 时仍会动。若 prompt 带 Rigidbody2D，不要用物理驱动位移，否则会与摆动抢 Transform。")]
+        public bool enablePromptBobbing = true;
+
+        [Tooltip("摆动所在本地轴。灯泡在 2D 里「几乎不动」时可尝试 LocalX 或 LocalZ。")]
+        public BranchingNpcPromptBobAxis promptBobAxis = BranchingNpcPromptBobAxis.LocalY;
+
+        [Min(0f)]
+        public float promptBobAmplitude = 0.35f;
+
+        [Min(0.01f)]
+        public float promptBobFrequency = 2f;
+
+        [Tooltip("勾选：仅当无人机靠近且当前可互动时显示提示（与 NpcInteractable 一致）。不勾选：未完成主线前提示常显。")]
+        public bool proximityPromptOnlyWhenNear;
+
+        [Header("分支 Q（临时寻路）")]
+        [Tooltip("按 Q 后保持寻路状态时长（秒，真实时间，不受 timeScale 影响）")]
+        [Min(0.1f)]
+        public float qBranchNavigatingSeconds = 3f;
 
         [Header("回退（未完成取药前）")]
         [Tooltip("运行中按下此键执行回退；选 None 则不监听键盘")]
@@ -126,6 +167,14 @@ namespace Gameplay.Events
         float _lastTick;
         bool _lineDone;
         bool _medicineComplete;
+        bool _rewardCardOfferedThisSession;
+
+        bool _proximityHighlight;
+        Vector3 _promptBobBaseLocal;
+        bool _promptBobBaseReady;
+
+        bool _qBranchRecovering;
+        Coroutine _qRecoverRoutine;
 
         AudioClip DroneTickClip => typewriterTickClipDrone != null ? typewriterTickClipDrone : typewriterTickClip;
 
@@ -134,29 +183,90 @@ namespace Gameplay.Events
                 ? "SickClassmate_MedicineComplete"
                 : progressPlayerPrefsKey.Trim();
 
+#if UNITY_EDITOR
+        void OnValidate()
+        {
+            if (Application.isPlaying)
+                return;
+            EnsureCollider2DTriggerEditor();
+        }
+
+        void EnsureCollider2DTriggerEditor()
+        {
+            var col = GetComponent<Collider2D>();
+            if (col == null)
+                col = Undo.AddComponent<CircleCollider2D>(gameObject);
+            if (col != null && !col.isTrigger)
+            {
+                Undo.RecordObject(col, "SickClassmate Collider isTrigger");
+                col.isTrigger = true;
+            }
+        }
+#endif
+
+        void EnsureCollider2DTriggerRuntime()
+        {
+            var c = GetComponent<Collider2D>();
+            if (c == null)
+            {
+                var circle = gameObject.AddComponent<CircleCollider2D>();
+                circle.isTrigger = true;
+                return;
+            }
+            c.isTrigger = true;
+        }
+
         void Awake()
         {
-            if (animator == null)
-                animator = GetComponentInChildren<Animator>();
+            ResolveAnimator();
             ResolveStatsHud();
 
-            var c = GetComponent<Collider2D>();
-            if (c != null)
-                c.isTrigger = true;
+            EnsureCollider2DTriggerRuntime();
 
-            _medicineComplete = !skipPersistentProgress && PlayerPrefs.GetInt(PrefsMedicineComplete, 0) != 0;
+            _medicineComplete = !skipPersistentProgress && PlayerPrefs.GetInt(EffectiveProgressPrefsKey, 0) != 0;
 
             if (!_medicineComplete)
                 ApplyUnwellMood();
             else
-            {
                 SetMoodHappy();
-                if (promptRoot != null)
-                    promptRoot.SetActive(false);
-            }
 
-            if (promptRoot != null)
-                promptRoot.SetActive(!_medicineComplete);
+            BranchingQuestNpcPromptUtil.DisableBobbingWorldSpritesUnder(promptRoot);
+            ApplyPromptRootVisibility();
+        }
+
+        void OnDisable()
+        {
+            StopQRecoverRoutine(clearFlags: true);
+        }
+
+        void LateUpdate()
+        {
+            if (!Application.isPlaying || !enablePromptBobbing || promptBobAmplitude <= 0f)
+                return;
+            var t = BranchingQuestNpcPromptUtil.ResolveBobbingTransform(promptRoot, promptBobbingTarget);
+            BranchingQuestNpcPromptUtil.TickBobbing(
+                t,
+                ref _promptBobBaseLocal,
+                ref _promptBobBaseReady,
+                promptBobAmplitude,
+                promptBobFrequency,
+                true,
+                promptBobAxis);
+        }
+
+        void ApplyPromptRootVisibility()
+        {
+            if (promptRoot == null)
+                return;
+            var wasActive = promptRoot.activeSelf;
+            var show = BranchingQuestNpcPromptUtil.ShouldShowPromptRoot(
+                _medicineComplete,
+                proximityPromptOnlyWhenNear,
+                _proximityHighlight,
+                () => CanInteract(null));
+            promptRoot.SetActive(show);
+            if (show && !wasActive)
+                _promptBobBaseReady = false;
         }
 
         void ResolveStatsHud()
@@ -188,6 +298,8 @@ namespace Gameplay.Events
         {
             if (_medicineComplete)
                 return false;
+            if (_qBranchRecovering)
+                return false;
             if (_flow != Flow.Idle)
                 return false;
             if (dialoguePanel != null && dialoguePanel.IsOpen)
@@ -206,11 +318,13 @@ namespace Gameplay.Events
             _typewriterCharsCarry = 0f;
             _lastTick = 0f;
             _lineDone = false;
+            _rewardCardOfferedThisSession = false;
 
             dialoguePanel.ExternalApplyPortraitRightOnly(npcPortrait);
             dialoguePanel.ExternalClearBody();
             dialoguePanel.ExternalEnsureBodyVisible();
             dialoguePanel.ExternalSetChoicePrompt(false, null);
+            ApplyPromptRootVisibility();
         }
 
         void Update()
@@ -407,9 +521,11 @@ namespace Gameplay.Events
                     statsHud.AddEmotion(1f);
                 }
 
+                StopQRecoverRoutine(clearFlags: true);
+                _qBranchRecovering = true;
+
                 ApplyUnwellMood();
-                if (promptRoot != null)
-                    promptRoot.SetActive(true);
+                ApplyPromptRootVisibility();
 
                 dialoguePanel.ExternalClearBody();
                 dialoguePanel.ExternalEnsureBodyVisible();
@@ -424,6 +540,8 @@ namespace Gameplay.Events
 
             if (Input.GetKeyDown(KeyCode.E))
             {
+                StopQRecoverRoutine(clearFlags: true);
+
                 dialoguePanel.ExternalSetChoicePrompt(false, null);
                 ResolveStatsHud();
                 if (statsHud != null)
@@ -435,12 +553,11 @@ namespace Gameplay.Events
                 _medicineComplete = true;
                 if (!skipPersistentProgress)
                 {
-                    PlayerPrefs.SetInt(PrefsMedicineComplete, 1);
+                    PlayerPrefs.SetInt(EffectiveProgressPrefsKey, 1);
                     PlayerPrefs.Save();
                 }
                 SetMoodHappy();
-                if (promptRoot != null)
-                    promptRoot.SetActive(false);
+                ApplyPromptRootVisibility();
 
                 dialoguePanel.ExternalClearBody();
                 dialoguePanel.ExternalEnsureBodyVisible();
@@ -485,7 +602,34 @@ namespace Gameplay.Events
         void UpdateBranchAfterQWaitSpace()
         {
             if (Input.GetKeyDown(KeyCode.Space))
+            {
                 EndDialogue();
+                ApplyPromptRootVisibility();
+                StopQRecoverRoutine(clearFlags: false);
+                _qRecoverRoutine = StartCoroutine(QBranchRecoverRoutine());
+            }
+        }
+
+        IEnumerator QBranchRecoverRoutine()
+        {
+            yield return new WaitForSecondsRealtime(qBranchNavigatingSeconds);
+            _qRecoverRoutine = null;
+            _qBranchRecovering = false;
+            if (_medicineComplete)
+                yield break;
+            ApplyUnwellMood();
+            ApplyPromptRootVisibility();
+        }
+
+        void StopQRecoverRoutine(bool clearFlags)
+        {
+            if (_qRecoverRoutine != null)
+            {
+                StopCoroutine(_qRecoverRoutine);
+                _qRecoverRoutine = null;
+            }
+            if (clearFlags)
+                _qBranchRecovering = false;
         }
 
         void UpdateBranchAfterENpcTyping()
@@ -521,25 +665,32 @@ namespace Gameplay.Events
         {
             if (Input.GetKeyDown(KeyCode.Space))
             {
-                EndDialogue();
                 ResolveRewardOfferService();
                 if (rewardCardOfferService != null && medicinePathRewardCardSprite != null &&
                     !string.IsNullOrEmpty(medicinePathRewardStorageKey))
                 {
+                    _rewardCardOfferedThisSession = true;
+                    NpcEventOutcomeAudio.PlayClip2D(rewardVictoryMusicClip, dialogueOutcomeMusicVolume);
+                    EndDialogue();
                     rewardCardOfferService.Offer(
                         medicinePathRewardCardSprite,
                         medicinePathRewardCardTitle,
                         medicinePathRewardStorageKey,
                         persistPlayerPrefs: !skipPersistentProgress);
                 }
+                else
+                    EndDialogue();
             }
         }
 
         void EndDialogue()
         {
+            if (!_rewardCardOfferedThisSession)
+                NpcEventOutcomeAudio.PlayClip2D(dialogueEndedWithoutRewardMusicClip, dialogueOutcomeMusicVolume);
             if (dialoguePanel != null)
                 dialoguePanel.ExternalSessionEnd();
             _flow = Flow.Idle;
+            ApplyPromptRootVisibility();
         }
 
         /// <summary>
@@ -552,6 +703,8 @@ namespace Gameplay.Events
             if (dialoguePanel != null && dialoguePanel.IsOpen)
                 dialoguePanel.ForceCloseWithoutCallback();
 
+            StopQRecoverRoutine(clearFlags: true);
+
             _flow = Flow.Idle;
             _visibleChars = 0;
             _typewriterCharsCarry = 0f;
@@ -560,7 +713,7 @@ namespace Gameplay.Events
 
             if (!skipPersistentProgress)
             {
-                PlayerPrefs.DeleteKey(PrefsMedicineComplete);
+                PlayerPrefs.DeleteKey(EffectiveProgressPrefsKey);
                 if (!string.IsNullOrEmpty(medicinePathRewardStorageKey))
                     PlayerPrefs.DeleteKey(medicinePathRewardStorageKey);
                 PlayerPrefs.Save();
@@ -568,8 +721,7 @@ namespace Gameplay.Events
             _medicineComplete = false;
 
             ApplyUnwellMood();
-            if (promptRoot != null)
-                promptRoot.SetActive(true);
+            ApplyPromptRootVisibility();
         }
 
         public Transform GetPromptAnchor()
@@ -579,32 +731,39 @@ namespace Gameplay.Events
 
         public void SetProximityHighlight(bool highlighted)
         {
+            _proximityHighlight = highlighted;
+            ApplyPromptRootVisibility();
         }
 
         public void ApplyUnwellMood()
         {
-            if (animator == null)
-                animator = GetComponentInChildren<Animator>();
+            ResolveAnimator();
             if (animator == null)
                 return;
 
             if (useAnimatorPlayStates && !string.IsNullOrEmpty(unwellStateName))
                 animator.Play(unwellStateName, animatorLayer, 0f);
-            else if (useFeelingBoolParameter && !string.IsNullOrEmpty(feelingGoodBoolParameter))
+            if (useFeelingBoolParameter && !string.IsNullOrEmpty(feelingGoodBoolParameter))
                 animator.SetBool(feelingGoodBoolParameter, false);
         }
 
         public void SetMoodHappy()
         {
-            if (animator == null)
-                animator = GetComponentInChildren<Animator>();
+            ResolveAnimator();
             if (animator == null)
                 return;
 
             if (useAnimatorPlayStates && !string.IsNullOrEmpty(happyStateName))
                 animator.Play(happyStateName, animatorLayer, 0f);
-            else if (useFeelingBoolParameter && !string.IsNullOrEmpty(feelingGoodBoolParameter))
+            if (useFeelingBoolParameter && !string.IsNullOrEmpty(feelingGoodBoolParameter))
                 animator.SetBool(feelingGoodBoolParameter, true);
+        }
+
+        void ResolveAnimator()
+        {
+            if (animator != null)
+                return;
+            animator = GetComponent<Animator>() ?? GetComponentInChildren<Animator>();
         }
     }
 }

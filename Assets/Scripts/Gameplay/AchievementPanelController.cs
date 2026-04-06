@@ -70,9 +70,16 @@ public class AchievementPanelController : MonoBehaviour
     [Tooltip("入库后自动打开成就台，便于立刻看到卡（关闭时 CanvasGroup alpha=0 会隐藏整张面板含新卡）")]
     public bool openPanelWhenCardAdded = true;
 
+    [Header("音效（成就台开关按钮；Time.timeScale=0 时仍播放）")]
+    [Tooltip("留空则静音。仅在玩家点击成就台入口切换开/关时播放，程序 SetOpen 不会触发")]
+    public AudioClip panelToggleClickClip;
+    [Range(0f, 1f)]
+    public float panelToggleClickVolume = 1f;
+
     bool _open;
     AchievementGridSlot[] _slots;
     AchievementCardViewerOverlay _runtimeCardViewer;
+    AudioSource _panelSfx;
 
 #if UNITY_EDITOR
     bool _viewerEnsureScheduled;
@@ -257,7 +264,29 @@ public class AchievementPanelController : MonoBehaviour
 
     public void Toggle()
     {
+        PlayPanelToggleClick();
         SetOpen(!_open);
+    }
+
+    void EnsurePanelSfxSource()
+    {
+        if (_panelSfx != null)
+            return;
+        _panelSfx = GetComponent<AudioSource>();
+        if (_panelSfx == null)
+            _panelSfx = gameObject.AddComponent<AudioSource>();
+        _panelSfx.playOnAwake = false;
+        _panelSfx.loop = false;
+        _panelSfx.spatialBlend = 0f;
+        _panelSfx.ignoreListenerPause = true;
+    }
+
+    void PlayPanelToggleClick()
+    {
+        if (panelToggleClickClip == null || !Application.isPlaying)
+            return;
+        EnsurePanelSfxSource();
+        _panelSfx.PlayOneShot(panelToggleClickClip, Mathf.Clamp01(panelToggleClickVolume));
     }
 
     public void SetOpen(bool open)

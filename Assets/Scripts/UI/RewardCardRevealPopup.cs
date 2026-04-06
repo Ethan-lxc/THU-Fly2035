@@ -51,6 +51,8 @@ public class RewardCardRevealPopup : MonoBehaviour
     Phase _phase = Phase.Hidden;
     float _previewElapsed;
     float _savedTimeScale;
+    /// <summary>Show() 时是否由本弹窗把 timeScale 从非零改成 0。若在对话暂停（已是 0）期间打开，则为 false，Close 时不改写 timeScale，避免把外层已恢复的流速再次置 0。</summary>
+    bool _ownsTimeScalePause;
     Sprite _sprite;
     string _title;
     string _activeStorageKey;
@@ -73,7 +75,8 @@ public class RewardCardRevealPopup : MonoBehaviour
         if (_phase != Phase.Hidden)
         {
             GameplayModalBlocker.Pop();
-            Time.timeScale = _savedTimeScale;
+            if (_ownsTimeScalePause)
+                Time.timeScale = _savedTimeScale;
             _phase = Phase.Hidden;
         }
     }
@@ -167,8 +170,10 @@ public class RewardCardRevealPopup : MonoBehaviour
         _phase = Phase.Preview;
         _previewElapsed = 0f;
         _savedTimeScale = Time.timeScale;
+        _ownsTimeScalePause = !Mathf.Approximately(Time.timeScale, 0f);
         GameplayModalBlocker.Push();
-        Time.timeScale = 0f;
+        if (_ownsTimeScalePause)
+            Time.timeScale = 0f;
 
         rootCanvasGroup.alpha = 1f;
         rootCanvasGroup.interactable = true;
@@ -240,7 +245,8 @@ public class RewardCardRevealPopup : MonoBehaviour
         _activeStorageKey = null;
         HideImmediate();
         GameplayModalBlocker.Pop();
-        Time.timeScale = _savedTimeScale;
+        if (_ownsTimeScalePause)
+            Time.timeScale = _savedTimeScale;
         _phase = Phase.Hidden;
     }
 

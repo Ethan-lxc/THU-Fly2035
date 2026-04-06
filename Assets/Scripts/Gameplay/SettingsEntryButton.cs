@@ -19,6 +19,14 @@ public class SettingsEntryButton : MonoBehaviour
     [Tooltip("若暂停菜单已打开时再次点击，是否关闭（toggle）")]
     public bool toggleIfAlreadyOpen = true;
 
+    [Header("音效（Time.timeScale=0 时仍播放）")]
+    [Tooltip("留空则静音")]
+    public AudioClip settingsClickClip;
+    [Range(0f, 1f)]
+    public float settingsClickVolume = 1f;
+
+    AudioSource _sfx;
+
     void Awake()
     {
         if (settingsButton == null)
@@ -33,8 +41,31 @@ public class SettingsEntryButton : MonoBehaviour
             settingsButton.onClick.RemoveListener(OnSettingsClicked);
     }
 
+    void EnsureSfxSource()
+    {
+        if (_sfx != null)
+            return;
+        _sfx = GetComponent<AudioSource>();
+        if (_sfx == null)
+            _sfx = gameObject.AddComponent<AudioSource>();
+        _sfx.playOnAwake = false;
+        _sfx.loop = false;
+        _sfx.spatialBlend = 0f;
+        _sfx.ignoreListenerPause = true;
+    }
+
+    void PlaySettingsClick()
+    {
+        if (settingsClickClip == null || !Application.isPlaying)
+            return;
+        EnsureSfxSource();
+        _sfx.PlayOneShot(settingsClickClip, Mathf.Clamp01(settingsClickVolume));
+    }
+
     void OnSettingsClicked()
     {
+        PlaySettingsClick();
+
         if (pauseMenu == null)
         {
             pauseMenu = FindObjectOfType<PauseMenuController>();

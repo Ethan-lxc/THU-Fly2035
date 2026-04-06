@@ -47,6 +47,9 @@ TagManager:
   - name: road
     uniqueID: 2677424941
     locked: 0
+  - name: "\u4F1A\u88AB\u906E\u6321\u7684"
+    uniqueID: 3262485251
+    locked: 0
   - name: bulding
     uniqueID: 2975182675
     locked: 0

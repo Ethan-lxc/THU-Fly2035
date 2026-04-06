@@ -4,20 +4,21 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// 集中调节 <see cref="SickClassmateNpcController"/> 里 NPC / 无人机打字速度（与 Inspector 同一套序列化字段）。
+/// 集中调节分支对白 NPC（<see cref="SickClassmateNpcController"/> / <see cref="DirectionGuideNpcController"/>）的打字速度（字段名一致）。
 /// </summary>
 public class SickClassmateTypewriterDebugWindow : EditorWindow
 {
-    const string MenuPath = "Window/调试/同学对白打字机";
+    const string MenuPath = "Window/调试/分支对白打字机";
 
     [MenuItem(MenuPath)]
     public static void Open()
     {
-        GetWindow<SickClassmateTypewriterDebugWindow>(false, "同学对白打字机", true);
+        GetWindow<SickClassmateTypewriterDebugWindow>(false, "分支对白打字机", true);
     }
 
     Vector2 _scroll;
-    SickClassmateNpcController[] _targets = System.Array.Empty<SickClassmateNpcController>();
+    MonoBehaviour[] _targets = System.Array.Empty<MonoBehaviour>();
+    string[] _targetLabels = System.Array.Empty<string>();
     int _pick;
     SerializedObject _so;
 
@@ -27,13 +28,38 @@ public class SickClassmateTypewriterDebugWindow : EditorWindow
 
     void RefreshTargets()
     {
-        _targets = FindObjectsOfType<SickClassmateNpcController>(true);
-        if (_targets == null || _targets.Length == 0)
+        var a = FindObjectsOfType<SickClassmateNpcController>(true);
+        var b = FindObjectsOfType<DirectionGuideNpcController>(true);
+        var n = (a != null ? a.Length : 0) + (b != null ? b.Length : 0);
+        if (n == 0)
         {
-            _targets = System.Array.Empty<SickClassmateNpcController>();
+            _targets = System.Array.Empty<MonoBehaviour>();
+            _targetLabels = System.Array.Empty<string>();
             _so = null;
             _pick = 0;
             return;
+        }
+
+        _targets = new MonoBehaviour[n];
+        _targetLabels = new string[n];
+        var i = 0;
+        if (a != null)
+        {
+            foreach (var c in a)
+            {
+                _targets[i] = c;
+                _targetLabels[i] = $"{c.gameObject.name} · SickClassmate";
+                i++;
+            }
+        }
+        if (b != null)
+        {
+            foreach (var c in b)
+            {
+                _targets[i] = c;
+                _targetLabels[i] = $"{c.gameObject.name} · DirectionGuide";
+                i++;
+            }
         }
 
         _pick = Mathf.Clamp(_pick, 0, _targets.Length - 1);
@@ -50,27 +76,24 @@ public class SickClassmateTypewriterDebugWindow : EditorWindow
     void OnGUI()
     {
         EditorGUILayout.Space(6);
-        EditorGUILayout.LabelField("同学求助 · 打字机", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("分支对白 · 打字机", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
             "NPC 与无人机使用不同「字/秒」与打字音间隔。编辑态改的是场景默认值；Play 时改动会立刻影响尚未打完的句子。",
             MessageType.Info);
         EditorGUILayout.Space(4);
 
-        if (GUILayout.Button("刷新场景中的 SickClassmateNpcController"))
+        if (GUILayout.Button("刷新场景中的分支对白 NPC"))
             RefreshTargets();
 
         if (_targets.Length == 0)
         {
-            EditorGUILayout.HelpBox("当前无可选对象（场景里没有 SickClassmateNpcController）。", MessageType.Warning);
+            EditorGUILayout.HelpBox("当前场景没有 SickClassmateNpcController 或 DirectionGuideNpcController。", MessageType.Warning);
             return;
         }
 
         if (_targets.Length > 1)
         {
-            var labels = new string[_targets.Length];
-            for (var i = 0; i < _targets.Length; i++)
-                labels[i] = $"{i}: {_targets[i].gameObject.name}";
-            var next = EditorGUILayout.Popup("目标实例", _pick, labels);
+            var next = EditorGUILayout.Popup("目标实例", _pick, _targetLabels);
             if (next != _pick)
             {
                 _pick = next;
@@ -78,7 +101,7 @@ public class SickClassmateTypewriterDebugWindow : EditorWindow
             }
         }
         else
-            EditorGUILayout.LabelField("目标", _targets[0].gameObject.name);
+            EditorGUILayout.LabelField("目标", _targetLabels[0]);
 
         if (_so == null || _so.targetObject != _targets[_pick])
             RebuildSo();

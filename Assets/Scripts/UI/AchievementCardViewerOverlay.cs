@@ -36,9 +36,18 @@ public class AchievementCardViewerOverlay : MonoBehaviour
 
     public Sprite editorPreviewSprite;
 
+    [Header("音效（查看大卡；Time.timeScale=0 时仍播放）")]
+    [Tooltip("打开欣赏层时；留空则静音")]
+    public AudioClip previewOpenClickClip;
+    [Tooltip("点击遮罩/大图/标题关闭时；留空则静音（Esc 关闭不播放）")]
+    public AudioClip previewCloseClickClip;
+    [Range(0f, 1f)]
+    public float previewClickVolume = 1f;
+
     [SerializeField] [HideInInspector] Vector2 _lastAutoWindowSize;
 
     CanvasGroup _canvasGroup;
+    AudioSource _viewerSfx;
 
 #if UNITY_EDITOR
     static Sprite _editorWhiteSprite;
@@ -114,6 +123,38 @@ public class AchievementCardViewerOverlay : MonoBehaviour
         _canvasGroup.blocksRaycasts = true;
 
         Canvas.ForceUpdateCanvases();
+
+        PlayPreviewOpenSound();
+    }
+
+    void EnsureViewerSfxSource()
+    {
+        if (_viewerSfx != null)
+            return;
+        _viewerSfx = GetComponent<AudioSource>();
+        if (_viewerSfx == null)
+            _viewerSfx = gameObject.AddComponent<AudioSource>();
+        _viewerSfx.playOnAwake = false;
+        _viewerSfx.loop = false;
+        _viewerSfx.spatialBlend = 0f;
+        _viewerSfx.ignoreListenerPause = true;
+    }
+
+    void PlayPreviewOpenSound()
+    {
+        if (previewOpenClickClip == null || !Application.isPlaying)
+            return;
+        EnsureViewerSfxSource();
+        _viewerSfx.PlayOneShot(previewOpenClickClip, Mathf.Clamp01(previewClickVolume));
+    }
+
+    /// <summary>由 <see cref="AchievementCardViewerCloseClick"/> 在点击关闭时调用；Esc 关闭不调用。</summary>
+    public void PlayPreviewCloseClickSound()
+    {
+        if (previewCloseClickClip == null || !Application.isPlaying)
+            return;
+        EnsureViewerSfxSource();
+        _viewerSfx.PlayOneShot(previewCloseClickClip, Mathf.Clamp01(previewClickVolume));
     }
 
     public void Hide()
@@ -395,6 +436,7 @@ public class AchievementCardViewerCloseClick : MonoBehaviour, IPointerClickHandl
             return;
         if (eventData.button != PointerEventData.InputButton.Left)
             return;
+        Owner?.PlayPreviewCloseClickSound();
         Owner?.Hide();
     }
 }

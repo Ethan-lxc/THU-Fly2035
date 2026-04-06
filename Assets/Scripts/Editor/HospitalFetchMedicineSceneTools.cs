@@ -48,5 +48,44 @@ public static class HospitalFetchMedicineSceneTools
         Selection.activeGameObject = go;
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
     }
+
+    /// <summary>第二套任务（如找自行车）：仍用 HospitalFetchMedicineEventConfig + HospitalFetchMedicineEvent，仅存档键与文案不同。</summary>
+    [MenuItem(MenuRoot + "Create Find Bicycle Config (same script, new asset)", false, 20)]
+    public static void CreateFindBicycleMedicineTemplateConfig()
+    {
+        var path = EditorUtility.SaveFilePanelInProject(
+            "保存找自行车任务配置（HospitalFetchMedicineEventConfig）",
+            "FindBicycleQuest_MedicineTemplate",
+            "asset",
+            "选择保存路径");
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        var asset = ScriptableObject.CreateInstance<HospitalFetchMedicineEventConfig>();
+        asset.dialogueLines = new[]
+        {
+            new DialogueLine
+            {
+                speaker = DialogueSpeaker.Npc,
+                text = "打扰一下，我的自行车不见了，你能帮我找回来吗？",
+            },
+            new DialogueLine
+            {
+                speaker = DialogueSpeaker.Player,
+                text = "我来看看。",
+            },
+        };
+        asset.activeQuestHudText = "前往指定地点找回自行车。";
+        asset.returnQuestHudText = "把自行车交还给失主。";
+        asset.rewardClueId = "find_bicycle_clue";
+        asset.rewardClueTitle = "自行车线索";
+        asset.playerPrefsCompletedKey = "Quest_FindBicycle_Completed";
+        asset.rewardAchievementTitle = "寻回自行车";
+
+        AssetDatabase.CreateAsset(asset, path);
+        AssetDatabase.SaveAssets();
+        EditorGUIUtility.PingObject(asset);
+        Selection.activeObject = asset;
+    }
 }
 #endif

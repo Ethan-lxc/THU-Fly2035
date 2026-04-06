@@ -55,6 +55,8 @@ public class GameplayDialoguePanel : MonoBehaviour
 
     void Awake()
     {
+        EnsureSfxSource();
+
         if (_phase != Phase.Hidden || _externalSessionActive)
             return;
 
@@ -66,6 +68,23 @@ public class GameplayDialoguePanel : MonoBehaviour
         }
         else
             gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// 场景中未拖 AudioSource 时，打字音效会被 TypewriterTMP 静默跳过；运行时补齐 2D 音源。
+    /// </summary>
+    void EnsureSfxSource()
+    {
+        if (sfxSource != null)
+            return;
+
+        sfxSource = GetComponent<AudioSource>();
+        if (sfxSource == null)
+            sfxSource = gameObject.AddComponent<AudioSource>();
+        sfxSource.playOnAwake = false;
+        sfxSource.loop = false;
+        sfxSource.spatialBlend = 0f;
+        sfxSource.volume = 1f;
     }
 
     void OnDestroy()
@@ -85,6 +104,8 @@ public class GameplayDialoguePanel : MonoBehaviour
 
     public void BeginSequence(HospitalFetchMedicineEventConfig config, Action onAccepted, Action onDeclined)
     {
+        EnsureSfxSource();
+
         if (_externalSessionActive)
         {
             onDeclined?.Invoke();
@@ -282,6 +303,8 @@ public class GameplayDialoguePanel : MonoBehaviour
     /// <summary>外部脚本驱动的对话（如同学求助分支），不占用医院流程 Phase。</summary>
     public void ExternalSessionBegin()
     {
+        EnsureSfxSource();
+
         if (_externalSessionActive)
             return;
         if (_phase != Phase.Hidden)
@@ -391,6 +414,8 @@ public class GameplayDialoguePanel : MonoBehaviour
         AudioClip tickClip,
         float sfxVolume)
     {
+        EnsureSfxSource();
+
         if (bodyText == null)
             return true;
 

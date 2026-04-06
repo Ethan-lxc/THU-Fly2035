@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6f83197bafb779e4fbb70398f6e44a00, type: 3}
+  m_Name: FindBicycleQuest_MedicineTemplate
+  m_EditorClassIdentifier: 
+  dialogueLines:
+  - speaker: 0
+    text: "\u6253\u6270\u4E00\u4E0B\uFF0C\u6211\u7684\u81EA\u884C\u8F66\u4E0D\u89C1\u4E86\uFF0C\u4F60\u80FD\u5E2E\u6211\u627E\u56DE\u6765\u5417\uFF1F"
+    overridePortrait: {fileID: 0}
+  - speaker: 1
+    text: "\u6211\u6765\u8BD5\u8BD5\u770B\u3002"
+    overridePortrait: {fileID: 0}
+  npcDisplayName: 
+  defaultNpcPortrait: {fileID: 0}
+  defaultPlayerPortrait: {fileID: 0}
+  acceptPromptText: "\u6309 \u7A7A\u683C \u63A5\u53D7\u4EFB\u52A1\uFF0C\u6309 Esc \u62D2\u7EDD\u3002"
+  activeQuestHudText: "\u524D\u5F80\u6307\u5B9A\u5730\u70B9\u627E\u56DE\u81EA\u884C\u8F66\u3002"
+  returnQuestHudText: "\u628A\u81EA\u884C\u8F66\u4EA4\u8FD8\u7ED9\u5931\u4E3B\u3002"
+  charsPerSecond: 24
+  minTypewriterTickInterval: 0.04
+  typewriterTickClip: {fileID: 0}
+  typewriterSfxVolume: 0.85
+  rewardAchievementCardSprite: {fileID: 0}
+  rewardAchievementTitle: "\u5BFB\u56DE\u81EA\u884C\u8F66"
+  rewardClueId: find_bicycle_clue
+  rewardClueTitle: "\u81EA\u884C\u8F66\u7EBF\u7D22"
+  rewardClueIcon: {fileID: 0}
+  playerPrefsCompletedKey: Quest_FindBicycle_Completed

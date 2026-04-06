@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Gameplay.Events
 {
     /// <summary>医院取药：对话 → 接受 → 取药点 → 送回 NPC → 奖励。</summary>
-    public class HospitalFetchMedicineEvent : MonoBehaviour
+    public class HospitalFetchMedicineEvent : MonoBehaviour, IQuestWorldEvent
     {
         public HospitalFetchMedicineEventConfig config;
 
@@ -24,8 +24,8 @@ namespace Gameplay.Events
         [Tooltip("取药点 Collider 所在物体，用于隐藏/显示")]
         public GameObject pickupColliderRoot;
 
-        [Tooltip("绑定的同学 NPC；开局不舒服动画，送药完成后切愉快动画")]
-        public NpcInteractable questNpc;
+        [Tooltip("绑定的同学 NPC；开局不舒服动画，送药完成后切愉快动画（须挂 QuestNpcInteractable 或兼容子类）")]
+        public MonoBehaviour questNpc;
 
         public enum QuestPhase
         {
@@ -56,7 +56,19 @@ namespace Gameplay.Events
             SyncNpcMoodToQuest();
         }
 
-        public bool CanInteractNpc(NpcInteractable npc)
+        /// <summary>供 <see cref="IQuestWorldEvent"/> 与任务 NPC（传 <see cref="MonoBehaviour"/>）调用。</summary>
+        public bool CanInteractNpc(MonoBehaviour npc) =>
+            npc != null && npc == questNpc && CanInteractNpcCore();
+
+        /// <summary>供 <see cref="IQuestWorldEvent"/> 与任务 NPC（传 <see cref="MonoBehaviour"/>）调用。</summary>
+        public void OnNpcInteract(MonoBehaviour npc)
+        {
+            if (npc != questNpc)
+                return;
+            OnNpcInteractCore();
+        }
+
+        bool CanInteractNpcCore()
         {
             if (config == null || dialoguePanel == null)
                 return false;
@@ -76,7 +88,7 @@ namespace Gameplay.Events
             return _phase == QuestPhase.GoingToPickup;
         }
 
-        public void OnNpcInteract(NpcInteractable npc)
+        void OnNpcInteractCore()
         {
             if (_phase == QuestPhase.HasMedicine)
             {
@@ -124,12 +136,12 @@ namespace Gameplay.Events
 
         void SyncNpcMoodToQuest()
         {
-            if (questNpc == null)
+            if (questNpc is not IQuestNpcMood mood)
                 return;
             if (_phase == QuestPhase.Completed)
-                questNpc.SetMoodHappy();
+                mood.SetMoodHappy();
             else
-                questNpc.ApplyUnwellMood();
+                mood.ApplyUnwellMood();
         }
 
         void CompleteQuest()
@@ -138,7 +150,8 @@ namespace Gameplay.Events
                 return;
             _phase = QuestPhase.Completed;
 
-            questNpc?.SetMoodHappy();
+            if (questNpc is IQuestNpcMood mood)
+                mood.SetMoodHappy();
 
             if (config != null)
             {

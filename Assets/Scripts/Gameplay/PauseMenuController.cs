@@ -8,6 +8,33 @@ using UnityEngine.UI;
 /// </summary>
 public class PauseMenuController : MonoBehaviour
 {
+    static Sprite _cachedWhiteUISprite;
+
+    static Sprite CachedWhiteUISprite()
+    {
+        if (_cachedWhiteUISprite != null)
+            return _cachedWhiteUISprite;
+        var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false)
+        {
+            hideFlags = HideFlags.HideAndDontSave
+        };
+        tex.SetPixel(0, 0, Color.white);
+        tex.Apply(false);
+        _cachedWhiteUISprite = Sprite.Create(tex, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f), 100f);
+        _cachedWhiteUISprite.hideFlags = HideFlags.HideAndDontSave;
+        return _cachedWhiteUISprite;
+    }
+
+    static void StretchFullScreen(RectTransform rt)
+    {
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.localScale = Vector3.one;
+    }
+
     public enum BgmVolumeBindMode
     {
         AudioMixerExposedParameter,
@@ -55,10 +82,27 @@ public class PauseMenuController : MonoBehaviour
     public UnityEvent onContinueClicked;
     public UnityEvent onSaveAndExitClicked;
 
+    [Header("音效（继续 / 退出；Time.timeScale=0 时仍播放）")]
+    [Tooltip("留空则静音")]
+    public AudioClip menuButtonClickClip;
+    [Range(0f, 1f)]
+    public float menuButtonClickVolume = 1f;
+
+    [Header("全屏遮罩")]
+    [Tooltip("可拖入 Sprite/图片作全屏遮罩底图；留空则为纯黑半透明。运行时挂在 Panels 等父节点下、位于菜单背后")]
+    public Sprite pauseDimSprite;
+    [Tooltip("未拖贴图时：遮罩为纯黑，Alpha 由此控制。拖贴图后：与「贴图染色」的 Alpha 相乘")]
+    [Range(0f, 1f)]
+    public float pauseDimAlpha = 0.65f;
+    [Tooltip("仅在拖了 pauseDimSprite 时生效：乘在贴图上的颜色（白=原图，可改色调；本颜色的 Alpha 会与 pauseDimAlpha 相乘）")]
+    public Color pauseDimSpriteTint = Color.white;
+
     [Header("调试")]
     [SerializeField] bool _isOpen;
 
     float _savedTimeScale = 1f;
+    GameObject _fullscreenDim;
+    AudioSource _menuSfx;
 
     public bool IsOpen => _isOpen;
 
@@ -80,12 +124,18 @@ public class PauseMenuController : MonoBehaviour
         if (bgmVolumeSlider != null)
             bgmVolumeSlider.onValueChanged.AddListener(OnBgmSliderChanged);
 
+        EnsureFullscreenDimBehindMenu();
+        if (_fullscreenDim != null)
+            _fullscreenDim.SetActive(false);
+
         _isOpen = false;
     }
 
     void OnValidate()
     {
         ApplyButtonImageUi();
+        if (Application.isPlaying && _fullscreenDim != null)
+            ApplyDimAppearance(_fullscreenDim.GetComponent<Image>());
     }
 
     void OnDestroy()
@@ -96,10 +146,87 @@ public class PauseMenuController : MonoBehaviour
             saveAndExitButton.onClick.RemoveListener(OnSaveAndExit);
         if (bgmVolumeSlider != null)
             bgmVolumeSlider.onValueChanged.RemoveListener(OnBgmSliderChanged);
+
+        if (_fullscreenDim != null)
+            Destroy(_fullscreenDim);
+        _fullscreenDim = null;
+    }
+
+    void EnsureFullscreenDimBehindMenu()
+    {
+        if (_fullscreenDim != null)
+            return;
+
+        var parentRt = transform.parent as RectTransform;
+        if (parentRt == null)
+            return;
+
+        _fullscreenDim = new GameObject("PauseFullscreenDim", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        var rt = _fullscreenDim.GetComponent<RectTransform>();
+        rt.SetParent(parentRt, false);
+        var insertAt = transform.GetSiblingIndex();
+        rt.SetSiblingIndex(insertAt);
+
+        StretchFullScreen(rt);
+
+        var img = _fullscreenDim.GetComponent<Image>();
+        ApplyDimAppearance(img);
+        img.raycastTarget = true;
+    }
+
+    void ApplyDimAppearance(Image img)
+    {
+        if (img == null)
+            return;
+
+        img.sprite = pauseDimSprite != null ? pauseDimSprite : CachedWhiteUISprite();
+        var a = Mathf.Clamp01(pauseDimAlpha);
+        if (pauseDimSprite == null)
+            img.color = new Color(0f, 0f, 0f, a);
+        else
+        {
+            var c = pauseDimSpriteTint;
+            c.a = Mathf.Clamp01(c.a) * a;
+            img.color = c;
+        }
+    }
+
+    void RefreshDimAppearance()
+    {
+        if (_fullscreenDim == null)
+            return;
+        ApplyDimAppearance(_fullscreenDim.GetComponent<Image>());
+    }
+
+    void EnsureMenuSfxSource()
+    {
+        if (_menuSfx != null)
+            return;
+
+        _menuSfx = GetComponent<AudioSource>();
+        if (_menuSfx == null)
+            _menuSfx = gameObject.AddComponent<AudioSource>();
+        _menuSfx.playOnAwake = false;
+        _menuSfx.loop = false;
+        _menuSfx.spatialBlend = 0f;
+        _menuSfx.ignoreListenerPause = true;
+    }
+
+    void PlayMenuButtonClick()
+    {
+        if (menuButtonClickClip == null || !Application.isPlaying)
+            return;
+        EnsureMenuSfxSource();
+        _menuSfx.PlayOneShot(menuButtonClickClip, Mathf.Clamp01(menuButtonClickVolume));
     }
 
     public void Show()
     {
+        EnsureFullscreenDimBehindMenu();
+        RefreshDimAppearance();
+        if (_fullscreenDim != null)
+            _fullscreenDim.SetActive(true);
+
         if (pauseTimeWhenOpen)
         {
             _savedTimeScale = Time.timeScale;
@@ -119,6 +246,9 @@ public class PauseMenuController : MonoBehaviour
 
     public void Hide()
     {
+        if (_fullscreenDim != null)
+            _fullscreenDim.SetActive(false);
+
         if (pauseTimeWhenOpen)
             Time.timeScale = _savedTimeScale > 0f ? _savedTimeScale : 1f;
 
@@ -134,12 +264,14 @@ public class PauseMenuController : MonoBehaviour
 
     void OnContinue()
     {
+        PlayMenuButtonClick();
         onContinueClicked?.Invoke();
         Hide();
     }
 
     void OnSaveAndExit()
     {
+        PlayMenuButtonClick();
         onSaveAndExitClicked?.Invoke();
     }
 
