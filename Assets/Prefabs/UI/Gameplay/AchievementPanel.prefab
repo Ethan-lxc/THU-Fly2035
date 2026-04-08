@@ -153,6 +153,12 @@ MonoBehaviour:
   emptySlotSprite: {fileID: 0}
   achievementCardPrefab: {fileID: 0}
   startClosed: 1
+  openPanelWhenCardAdded: 0
+  panelToggleClickClip: {fileID: 8300000, guid: 93f1ce267e8fda441bd87f1433b712b4, type: 3}
+  panelToggleClickVolume: 1
+  entryHoverBrightness: 0.78
+  entryPressedBrightness: 0.65
+  entryColorTransitionDuration: 0.08
 --- !u!1 &2430519404522204141
 GameObject:
   m_ObjectHideFlags: 0

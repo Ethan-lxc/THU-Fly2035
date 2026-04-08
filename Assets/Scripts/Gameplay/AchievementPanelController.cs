@@ -76,6 +76,11 @@ public class AchievementPanelController : MonoBehaviour
     [Range(0f, 1f)]
     public float panelToggleClickVolume = 1f;
 
+    [Header("入口按钮悬停（ColorTint 与图形色相乘）")]
+    [Range(0.4f, 1f)] public float entryHoverBrightness = 0.78f;
+    [Range(0.35f, 1f)] public float entryPressedBrightness = 0.65f;
+    [Min(0.01f)] public float entryColorTransitionDuration = 0.08f;
+
     bool _open;
     AchievementGridSlot[] _slots;
     AchievementCardViewerOverlay _runtimeCardViewer;
@@ -93,7 +98,14 @@ public class AchievementPanelController : MonoBehaviour
         ConfigureScrollRectForStaticGrid();
         ApplyPanelBackground();
         if (toggleButton != null)
+        {
+            UiButtonHoverTint.Apply(
+                toggleButton,
+                entryHoverBrightness,
+                entryPressedBrightness,
+                entryColorTransitionDuration);
             toggleButton.onClick.AddListener(Toggle);
+        }
         ResolveContentRoot();
         EnsureGridLayout();
         BuildGridSlots();

@@ -1,0 +1,15 @@
+AmbientNpcPathMover 手动验证步骤（Unity 编辑器）
+
+1. 打开任意场景，创建空物体 NPC_Test，下挂简单 Sprite 或占位立方体（无需 Collider）。
+2. 在同一父级或世界根下创建 3 个空物体：WP0、WP1、WP2，摆成折线（仅改 X/Y）。
+3. 在 NPC_Test 上添加组件 AmbientNpcPathMover：
+   - Waypoints 拖入顺序：WP0 → WP1 → WP2
+   - Loop Mode 先选 Loop，Move Speed ≈ 2，Arrival Epsilon ≈ 0.05
+   - Face Move Direction：FlipScaleX（立绘左右翻转）
+   - Lock Z 勾选，Capture Fixed Z From Spawn 勾选
+4. Play：NPC 应依次走向 WP0→WP1→WP2→WP0…；左右翻面由当前路段切线（上一路点→目标路点）决定，过路点后应立刻随下一段转向；Scale X 应变号。
+5. 将 Loop Mode 改为 PingPong：应在路径两端折返，不再从尾部瞬回 WP0。
+6. 将 Loop Mode 改为 Once：走完 WP2 后应停下；若挂了 On Path Completed Once 可观察事件是否触发一次。
+
+可选：勾选 First Waypoint Matches Spawn，并把 Waypoints 第一个放在与 NPC 出生重合的 WP0，
+此时首个目标应为 WP1（需至少 2 个路点）。

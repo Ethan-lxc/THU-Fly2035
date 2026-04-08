@@ -10,7 +10,7 @@ public class MiniMapHud : MonoBehaviour
     [Tooltip("小地图底图（Image）")]
     public Image minimapBackground;
 
-    [Tooltip("可选：用于之后只加框图、不动脚本的空节点或子 Image")]
+    [Tooltip("可选：小地图框插槽。可在其子级放 RawImage 显示实时缩略图，并把该 RawImage 拖到场景里 MinimapSystem 的 Minimap Raw Image 上。")]
     public RectTransform frameSlot;
 
     [Header("外观")]

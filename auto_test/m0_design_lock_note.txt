@@ -1,0 +1,3 @@
+M0 design lock: see Assets/Documentation/M0_DesignLock.txt
+Scenes: Assets/Scenes/Boot.unity, MainMenu.unity, Game.unity (URP2D template + SceneRoots)
+EditorBuildSettings: Boot first in build list; TitleScene/GameScene follow.

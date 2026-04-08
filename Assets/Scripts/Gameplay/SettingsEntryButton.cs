@@ -25,6 +25,11 @@ public class SettingsEntryButton : MonoBehaviour
     [Range(0f, 1f)]
     public float settingsClickVolume = 1f;
 
+    [Header("按钮悬停（ColorTint 与图形色相乘）")]
+    [Range(0.4f, 1f)] public float hoverBrightness = 0.78f;
+    [Range(0.35f, 1f)] public float pressedBrightness = 0.65f;
+    [Min(0.01f)] public float colorTransitionDuration = 0.08f;
+
     AudioSource _sfx;
 
     void Awake()
@@ -32,7 +37,10 @@ public class SettingsEntryButton : MonoBehaviour
         if (settingsButton == null)
             settingsButton = GetComponent<Button>();
         if (settingsButton != null)
+        {
+            UiButtonHoverTint.Apply(settingsButton, hoverBrightness, pressedBrightness, colorTransitionDuration);
             settingsButton.onClick.AddListener(OnSettingsClicked);
+        }
     }
 
     void OnDestroy()
