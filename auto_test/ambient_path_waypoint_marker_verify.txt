@@ -1,0 +1,5 @@
+AmbientNpcPathMover（简化版）
+- 朝向仅由路段切线驱动：Face Move Direction = RotateY 时沿路拐点自动转向。
+- Start / 拍快照 / Restart 前会 EnsureWaypointsNotParentedUnderMover：waypoints 里挂在载具子级的 Transform 会解父到场景根，世界坐标不变，不会随车跑。
+- 建议保持 Freeze Path World Positions At Awake 勾选。
+- 已移除 AmbientPathWaypointMarker 与路点索引列表；若场景里仍有该组件，请在 Unity 里删掉缺失脚本引用。

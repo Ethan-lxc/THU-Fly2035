@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// 与 <see cref="IsoDroneController"/> 配合：在指定 <see cref="Canvas"/> 下生成 UI 锚点（世界坐标对应屏幕位置），
@@ -70,12 +71,35 @@ public class MapAnchorController : MonoBehaviour
         if (drone == null)
             drone = FindObjectOfType<IsoDroneController>();
 
-        if (anchorCanvas == null)
-            anchorCanvas = FindObjectOfType<Canvas>();
+        ResolveAnchorCanvasReference();
+    }
+
+    /// <summary>
+    /// 主场景里 anchorCanvas 常指向仅存在于 GameScene 的独立 Canvas；进入超市等子场景后该引用会失效，
+    /// 需改挂到 DontDestroyOnLoad 的主 HUD Canvas（与 GameplayHudLayout 同层）。
+    /// </summary>
+    public void ResolveAnchorCanvasReference()
+    {
+        if (anchorCanvas != null && anchorCanvas)
+            return;
+
+        if (PersistentGameplayUiBootstrap.Instance != null)
+        {
+            var c = PersistentGameplayUiBootstrap.Instance.RootCanvas;
+            if (c != null)
+            {
+                anchorCanvas = c;
+                return;
+            }
+        }
+
+        anchorCanvas = FindObjectOfType<Canvas>();
     }
 
     void OnEnable()
     {
+        ResolveAnchorCanvasReference();
+        SceneManager.sceneLoaded += OnSceneLoadedForAnchorCanvas;
         if (drone == null) return;
         drone.onDestinationSet.AddListener(OnDestinationSet);
         drone.onArrivedAtDestination.AddListener(OnArrivedAtDestination);
@@ -83,13 +107,26 @@ public class MapAnchorController : MonoBehaviour
 
     void OnDisable()
     {
+        SceneManager.sceneLoaded -= OnSceneLoadedForAnchorCanvas;
         if (drone == null) return;
         drone.onDestinationSet.RemoveListener(OnDestinationSet);
         drone.onArrivedAtDestination.RemoveListener(OnArrivedAtDestination);
     }
 
+    void OnSceneLoadedForAnchorCanvas(Scene scene, LoadSceneMode mode)
+    {
+        if (mode != LoadSceneMode.Single)
+            return;
+        if (scene.name != GameplaySceneNames.MainWorldSceneName &&
+            scene.name != GameplaySceneNames.SupermarketSceneName)
+            return;
+        ResolveAnchorCanvasReference();
+    }
+
     void LateUpdate()
     {
+        if (anchorCanvas == null || !anchorCanvas)
+            ResolveAnchorCanvasReference();
         if (_anchorRect == null || anchorCanvas == null)
             return;
         SyncAnchorUiToWorld();
@@ -98,6 +135,7 @@ public class MapAnchorController : MonoBehaviour
     void OnDestinationSet(Vector2 worldPos)
     {
         ClearAnchorInstance();
+        ResolveAnchorCanvasReference();
 
         if (anchorCanvas == null)
         {

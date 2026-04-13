@@ -1,3 +1,4 @@
+using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -7,6 +8,9 @@ using UnityEngine.UI;
 /// </summary>
 public class PlayerStatsHud : MonoBehaviour
 {
+    /// <summary>运行中任意数值写入后触发（含 Set / Add / Awake 首刷）。参数为当前专业、情感。</summary>
+    public event Action<float, float> StatsChanged;
+
     [Header("引用")]
     public Image professionalismIcon;
     public Image emotionIcon;
@@ -132,6 +136,9 @@ public class PlayerStatsHud : MonoBehaviour
             professionalismValueText.text = _pro.ToString(fmt);
         if (emotionValueText != null)
             emotionValueText.text = _emo.ToString(fmt);
+
+        if (Application.isPlaying)
+            StatsChanged?.Invoke(_pro, _emo);
     }
 
     public void SetProfessionalismIcon(Sprite sprite)

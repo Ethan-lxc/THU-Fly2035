@@ -4,8 +4,8 @@ using UnityEngine;
 using UnityEngine.Events;
 
 /// <summary>
-/// 沿 Transform 路点移动的环境 NPC。翻面由<strong>当前路段平面切线</strong>（上一路点 → 当前目标路点）驱动，
-/// 避免用「位置到目标残差」在过弯/竖线段落入死区导致不转向；位移在 Update，朝向在 LateUpdate 施加。
+/// 沿 Transform 路点移动的环境 NPC / 载具。<strong>朝向</strong>由<strong>当前路段平面切线</strong>（上一路点 → 当前目标路点）在路段间更新（Flip 或 RotateY）；
+/// 路点若挂在载具子级会在启动/拍快照前自动解父到场景根，避免随车移动。位移在 Update，朝向在 LateUpdate。
 /// </summary>
 [DisallowMultipleComponent]
 [DefaultExecutionOrder(32000)]
@@ -40,8 +40,7 @@ public class AmbientNpcPathMover : MonoBehaviour
         "可配合下方「拆到场景根」保留编辑层级；不勾选则每帧读路点当前坐标（适合路点跟移动平台）。")]
     public bool freezePathWorldPositionsAtAwake = true;
 
-    [Tooltip(
-        "在拍下快照后，把列表里「仍是本物体后代」的路点 SetParent 到场景根并保持世界坐标。")]
+    [Tooltip("兼容旧序列化。路点解父在拍快照前<strong>始终</strong>执行，无需依赖此项。")]
     public bool detachWaypointsToSceneRootAfterSnapshot = true;
 
     [Tooltip("0=Start 当帧立刻拍快照；若出生点仍在其它脚本的 Update 里刷新，可改为 1～2")]
@@ -86,7 +85,7 @@ public class AmbientNpcPathMover : MonoBehaviour
     [Tooltip("FlipScaleX 且不用 flipX 时：水平镜像作用到此 Transform；空则用挂脚本的物体")]
     public Transform mirrorScaleTarget;
 
-    [Tooltip("路段切线在翻转轴上投影绝对值小于 max(1e-5, 此值×0.01) 时不更新 flip（纯竖线段横版不翻面）")]
+    [Tooltip("仅 Flip 模式：路段切线在翻转轴上投影绝对值小于 max(1e-5, 此值×0.01) 时不更新 flip。RotateY 不受此项影响。")]
     [Min(0.0001f)] public float faceHorizontalEpsilon = 0.001f;
 
     [Tooltip("RotateY：路段切线过短时不改旋转")]
@@ -163,6 +162,8 @@ public class AmbientNpcPathMover : MonoBehaviour
 
     void Start()
     {
+        EnsureWaypointsNotParentedUnderMover();
+
         if (!freezePathWorldPositionsAtAwake)
         {
             RefreshSegmentFacingDir();
@@ -305,6 +306,8 @@ public class AmbientNpcPathMover : MonoBehaviour
         ApplyFacingFromSegmentDir();
     }
 
+    const float SegmentPlanarDegenerateSqr = 1e-8f;
+
     void RefreshSegmentFacingDir()
     {
         if (waypoints == null || waypoints.Count == 0)
@@ -324,7 +327,7 @@ public class AmbientNpcPathMover : MonoBehaviour
         var from = GetSegmentStartPlanar(k, n);
         var d = to - from;
 
-        if (d.sqrMagnitude < 1e-10f)
+        if (!TryUnfoldDegeneratePlanarDelta(k, n, from, to, ref d))
         {
             if (_segmentPlanarDir.sqrMagnitude > 1e-10f)
                 return;
@@ -339,6 +342,82 @@ public class AmbientNpcPathMover : MonoBehaviour
         _segmentPlanarDir = d.normalized;
         if (_segmentLoopWrapToZero && k == 0)
             _segmentLoopWrapToZero = false;
+    }
+
+    /// <summary>
+    /// 上一路点与当前目标重合或极近时，沿路径向后找第一条非零距离，避免在拐点仍沿用上一段方向（常见于轴测路点贴得过近）。
+    /// </summary>
+    bool TryUnfoldDegeneratePlanarDelta(int k, int n, Vector2 fromPlanar, Vector2 toPlanar, ref Vector2 d)
+    {
+        if (d.sqrMagnitude >= SegmentPlanarDegenerateSqr)
+            return true;
+
+        var pivot = toPlanar;
+
+        if (loopMode == LoopMode.Loop)
+        {
+            for (var s = 1; s < n; s++)
+            {
+                var idx = (k + s) % n;
+                if (waypoints[idx] == null)
+                    continue;
+                d = GetWaypointPlanar(idx) - pivot;
+                if (d.sqrMagnitude >= SegmentPlanarDegenerateSqr)
+                    return true;
+            }
+        }
+        else if (loopMode == LoopMode.Once)
+        {
+            for (var idx = k + 1; idx < n; idx++)
+            {
+                if (waypoints[idx] == null)
+                    continue;
+                d = GetWaypointPlanar(idx) - pivot;
+                if (d.sqrMagnitude >= SegmentPlanarDegenerateSqr)
+                    return true;
+            }
+        }
+        else
+        {
+            for (var s = 1; s < n; s++)
+            {
+                var idx = k + _pingPongStep * s;
+                if (idx < 0 || idx >= n)
+                    break;
+                if (waypoints[idx] == null)
+                    continue;
+                d = GetWaypointPlanar(idx) - pivot;
+                if (d.sqrMagnitude >= SegmentPlanarDegenerateSqr)
+                    return true;
+            }
+        }
+
+        for (var s = 1; s < n; s++)
+        {
+            int idx;
+            if (loopMode == LoopMode.Loop)
+                idx = (k + s) % n;
+            else if (loopMode == LoopMode.Once)
+            {
+                idx = k + s;
+                if (idx >= n)
+                    break;
+            }
+            else
+            {
+                idx = k + _pingPongStep * s;
+                if (idx < 0 || idx >= n)
+                    break;
+            }
+
+            if (idx < 0 || idx >= n || waypoints[idx] == null)
+                continue;
+            d = GetWaypointPlanar(idx) - fromPlanar;
+            if (d.sqrMagnitude >= SegmentPlanarDegenerateSqr)
+                return true;
+        }
+
+        return false;
     }
 
     Vector2 GetWaypointPlanar(int i)
@@ -374,23 +453,11 @@ public class AmbientNpcPathMover : MonoBehaviour
         if (!TryResolveTargetIndex(out _))
             return;
 
-        var refAxis = useWorldYAsFlipLateralAxis ? Vector2.up : Vector2.right;
-        var lateral = Vector2.Dot(_segmentPlanarDir, refAxis);
-        if (invertFacing)
-            lateral = -lateral;
-
-        var lateralDead = Mathf.Max(1e-5f, faceHorizontalEpsilon * 0.01f);
-        if (Mathf.Abs(lateral) < lateralDead)
-            return;
-
         switch (faceMoveDirection)
         {
-            case FaceMoveMode.FlipSpriteRendererX:
-            case FaceMoveMode.FlipScaleX:
-                ApplyFlipFromLateralSign(lateral);
-                break;
             case FaceMoveMode.RotateY:
             {
+                // 不得以「在水平轴上的投影」作死区：轴测/竖直路段在 X 上投影可接近 0，会导致路过拐点不转向。
                 Vector3 dir3;
                 if (lockZ)
                     dir3 = new Vector3(_segmentPlanarDir.x, 0f, _segmentPlanarDir.y);
@@ -404,12 +471,32 @@ public class AmbientNpcPathMover : MonoBehaviour
                     transform.rotation = Quaternion.LookRotation(dir3.normalized, Vector3.up);
                 break;
             }
+            case FaceMoveMode.FlipSpriteRendererX:
+            case FaceMoveMode.FlipScaleX:
+            {
+                var refAxis = useWorldYAsFlipLateralAxis ? Vector2.up : Vector2.right;
+                var lateral = Vector2.Dot(_segmentPlanarDir, refAxis);
+                if (invertFacing)
+                    lateral = -lateral;
+
+                var lateralDead = Mathf.Max(1e-5f, faceHorizontalEpsilon * 0.01f);
+                if (Mathf.Abs(lateral) < lateralDead)
+                    return;
+
+                ApplyFlipFromLateralSign(lateral);
+                break;
+            }
         }
     }
 
     void ApplyFlipFromLateralSign(float lateral)
     {
         var flipX = lateral < 0f;
+        WriteFlipXVisual(flipX);
+    }
+
+    void WriteFlipXVisual(bool flipX)
+    {
         if (ShouldUseSpriteFlip())
             WriteSpriteFlipXAll(flipX);
         else
@@ -487,25 +574,26 @@ public class AmbientNpcPathMover : MonoBehaviour
         if (waypoints == null || waypoints.Count == 0)
             return;
 
+        var arrivedIndex = _targetIndex;
         var n = waypoints.Count;
 
         switch (loopMode)
         {
             case LoopMode.Once:
-                if (_targetIndex >= n - 1)
+                if (arrivedIndex >= n - 1)
                 {
                     _pathFinished = true;
                     onPathCompletedOnce?.Invoke();
                     return;
                 }
 
-                _targetIndex = NextIndexForward(_targetIndex);
+                _targetIndex = NextIndexForward(arrivedIndex);
                 break;
 
             case LoopMode.Loop:
             {
-                var oldIdx = _targetIndex;
-                _targetIndex = (_targetIndex + 1) % n;
+                var oldIdx = arrivedIndex;
+                _targetIndex = (arrivedIndex + 1) % n;
                 _segmentLoopWrapToZero = n > 1 && oldIdx == n - 1 && _targetIndex == 0;
                 if (!TryResolveTargetIndex(out var loopIdx))
                 {
@@ -518,7 +606,7 @@ public class AmbientNpcPathMover : MonoBehaviour
             }
 
             case LoopMode.PingPong:
-                var next = _targetIndex + _pingPongStep;
+                var next = arrivedIndex + _pingPongStep;
                 if (next >= n)
                 {
                     if (n <= 1)
@@ -528,12 +616,12 @@ public class AmbientNpcPathMover : MonoBehaviour
                     }
 
                     _pingPongStep = -1;
-                    next = _targetIndex + _pingPongStep;
+                    next = arrivedIndex + _pingPongStep;
                 }
                 else if (next < 0)
                 {
                     _pingPongStep = 1;
-                    next = _targetIndex + _pingPongStep;
+                    next = arrivedIndex + _pingPongStep;
                 }
 
                 _targetIndex = next;
@@ -552,6 +640,8 @@ public class AmbientNpcPathMover : MonoBehaviour
 
         _targetIndex = resolved;
         RefreshSegmentFacingDir();
+        // 同帧 LateUpdate 前就应指向新路段，避免「路过 1、3 仍保持上一段朝向」的一帧延迟感
+        ApplyFacingFromSegmentDir();
     }
 
     int NextIndexForward(int src)
@@ -576,9 +666,8 @@ public class AmbientNpcPathMover : MonoBehaviour
 
     void ApplyFrozenPathSnapshotAndDetach()
     {
+        EnsureWaypointsNotParentedUnderMover();
         RebuildWaypointWorldSnapshotFromTransforms();
-        if (freezePathWorldPositionsAtAwake && detachWaypointsToSceneRootAfterSnapshot)
-            DetachListedWaypointsPreserveWorldPose();
     }
 
     void RebuildWaypointWorldSnapshotFromTransforms()
@@ -597,7 +686,10 @@ public class AmbientNpcPathMover : MonoBehaviour
         }
     }
 
-    void DetachListedWaypointsPreserveWorldPose()
+    /// <summary>
+    /// 列表中路点不得为本载具子物体，否则会随载具移动。解父到场景根并保持世界坐标。
+    /// </summary>
+    void EnsureWaypointsNotParentedUnderMover()
     {
         if (waypoints == null)
             return;
@@ -689,6 +781,7 @@ public class AmbientNpcPathMover : MonoBehaviour
     /// <summary>从当前状态重新开始走路线（路径快照不会重拍）。</summary>
     public void RestartPath()
     {
+        EnsureWaypointsNotParentedUnderMover();
         ResetPathState();
         RefreshSegmentFacingDir();
     }
@@ -696,9 +789,8 @@ public class AmbientNpcPathMover : MonoBehaviour
     /// <summary>按当前路点 Transform 再拍一次世界坐标并重新开始走。</summary>
     public void RestartPathAndRecaptureWorldPositions()
     {
+        EnsureWaypointsNotParentedUnderMover();
         RebuildWaypointWorldSnapshotFromTransforms();
-        if (freezePathWorldPositionsAtAwake && detachWaypointsToSceneRootAfterSnapshot)
-            DetachListedWaypointsPreserveWorldPose();
         ResetPathState();
         RefreshSegmentFacingDir();
     }

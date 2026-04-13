@@ -168,25 +168,35 @@ public class IsoDroneController : MonoBehaviour
             : FindWorldInteractViaTriggers();
     }
 
+    static int GetWorldInteractResolvePriority(IWorldInteractable iw)
+    {
+        if (iw is IWorldInteractableResolvePriority p)
+            return p.WorldInteractResolvePriority;
+        return 0;
+    }
+
     IWorldInteractable FindWorldInteractViaOverlapCircle()
     {
         var pos = (Vector2)transform.position;
         var hits = Physics2D.OverlapCircleAll(pos, worldInteractRadius, worldInteractLayers);
         IWorldInteractable best = null;
         var bestDist = float.MaxValue;
+        var bestPri = int.MinValue;
         foreach (var h in hits)
         {
             if (h == null)
                 continue;
-            var iw = h.GetComponent<IWorldInteractable>();
+            var iw = h.GetComponentInParent<IWorldInteractable>();
             if (iw == null)
                 continue;
             if (!iw.CanInteract(transform))
                 continue;
             var d = ((Vector2)h.transform.position - pos).sqrMagnitude;
-            if (d < bestDist)
+            var pri = GetWorldInteractResolvePriority(iw);
+            if (best == null || pri > bestPri || (pri == bestPri && d < bestDist))
             {
                 bestDist = d;
+                bestPri = pri;
                 best = iw;
             }
         }
@@ -208,6 +218,7 @@ public class IsoDroneController : MonoBehaviour
 
         IWorldInteractable best = null;
         var bestDist = float.MaxValue;
+        var bestPri = int.MinValue;
         var pos = (Vector2)transform.position;
 
         foreach (var col in _worldOverlap)
@@ -222,9 +233,11 @@ public class IsoDroneController : MonoBehaviour
             if (!iw.CanInteract(transform))
                 continue;
             var d = ((Vector2)col.bounds.center - pos).sqrMagnitude;
-            if (d < bestDist)
+            var pri = GetWorldInteractResolvePriority(iw);
+            if (best == null || pri > bestPri || (pri == bestPri && d < bestDist))
             {
                 bestDist = d;
+                bestPri = pri;
                 best = iw;
             }
         }
@@ -249,6 +262,17 @@ public class IsoDroneController : MonoBehaviour
         isMovingToTarget = true;
 
         onDestinationSet?.Invoke(targetWorldPos);
+    }
+
+    /// <summary>场景切换传送后调用：清除未完成的寻路目标，避免仍向旧世界坐标移动。</summary>
+    public void SyncMovementStateAfterTeleport()
+    {
+        var p = (Vector2)transform.position;
+        targetWorldPos = p;
+        waypoint = p;
+        currentVelocity = Vector2.zero;
+        isMovingToWaypoint = false;
+        isMovingToTarget = false;
     }
 
     void FixedUpdate()

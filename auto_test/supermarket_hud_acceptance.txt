@@ -1,0 +1,5 @@
+验收步骤（手动）：
+1) 从 Title 开始游戏进入 GameScene。
+2) 控制角色走到 SupermarketPortal 触发区（约 x=-88, y=-2.5 附近），应加载 Supermarket。
+3) 超市场景左上角点「返回主世界」，应回到 GameScene；HUD/暂停/对话仍可用；Console 无多个 EventSystem 警告。
+4) 确认 Hierarchy 中仅一套来自 DontDestroyOnLoad 的 Canvas（GameplayHUD）与 EventSystem。

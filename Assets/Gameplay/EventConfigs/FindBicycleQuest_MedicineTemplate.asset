@@ -22,8 +22,17 @@ MonoBehaviour:
   npcDisplayName: 
   defaultNpcPortrait: {fileID: 0}
   defaultPlayerPortrait: {fileID: 0}
-  acceptPromptText: "\u6309 \u7A7A\u683C \u63A5\u53D7\u4EFB\u52A1\uFF0C\u6309 Esc \u62D2\u7EDD\u3002"
+  acceptPromptText: "\u6309\u0020\u7a7a\u683c\u0020\u6216\u0020\u0045\u0020\u63a5\u53d7\u4efb\u52a1\uff0c\u6309\u0020\u0045\u0073\u0063\u0020\u62d2\u7edd\u3002"
+  returnDialogueLines:
+  - speaker: 0
+    text: "\u8c22\u8c22\u4f60\u5e2e\u6211\u627e\u56de\u81ea\u884c\u8f66\uff01"
+    overridePortrait: {fileID: 0}
+  - speaker: 1
+    text: "\u5c0f\u4e8b\u4e00\u6869\u3002"
+    overridePortrait: {fileID: 0}
+  searchingHospitalHudText: "\u524d\u5f80\u6307\u5b9a\u5730\u70b9\u5bfb\u627e\u81ea\u884c\u8f66\u3002"
   activeQuestHudText: "\u524D\u5F80\u6307\u5B9A\u5730\u70B9\u627E\u56DE\u81EA\u884C\u8F66\u3002"
+  pickupSuccessHudText: "\u5DF2\u627E\u5230\u81EA\u884C\u8F66"
   returnQuestHudText: "\u628A\u81EA\u884C\u8F66\u4EA4\u8FD8\u7ED9\u5931\u4E3B\u3002"
   charsPerSecond: 24
   minTypewriterTickInterval: 0.04

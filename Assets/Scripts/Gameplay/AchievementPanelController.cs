@@ -8,7 +8,7 @@ using UnityEditor;
 /// <summary>
 /// 右中：成就按钮切换成就面板；4×4 固定槽位，入卡顺序从左到右、从上到下。
 /// </summary>
-public class AchievementPanelController : MonoBehaviour
+public class AchievementPanelController : MonoBehaviour, ICardPreviewSource
 {
     public const int GridColumns = 4;
     public const int GridRows = 4;
@@ -40,7 +40,7 @@ public class AchievementPanelController : MonoBehaviour
     public Vector2 cellSpacing = new Vector2(6f, 6f);
 
     [Tooltip("相对 Content 根的四边留白；想更贴边可改小")]
-    public RectOffset gridPadding = new RectOffset(4, 4, 4, 4);
+    public RectOffset gridPadding;
 
     [Tooltip("整块 4×4 网格在 Content 区域内的对齐（占不满时尤明显）")]
     public TextAnchor gridChildAlignment = TextAnchor.UpperLeft;
@@ -95,7 +95,7 @@ public class AchievementPanelController : MonoBehaviour
     void Awake()
     {
         AutoResolveReferences();
-        ConfigureScrollRectForStaticGrid();
+        ScrollRectStaticGridConfigurator.ConfigureForStaticGrid(scrollRect);
         ApplyPanelBackground();
         if (toggleButton != null)
         {
@@ -133,38 +133,6 @@ public class AchievementPanelController : MonoBehaviour
             if (panelBackgroundImage == null && transform.childCount > 0)
                 panelBackgroundImage = transform.GetChild(0).GetComponent<Image>();
         }
-    }
-
-    /// <summary>固定 4×4 网格一屏显示，关闭拖拽/惯性滚动并隐藏滚动条。</summary>
-    void ConfigureScrollRectForStaticGrid()
-    {
-        if (scrollRect == null)
-            return;
-
-        scrollRect.horizontal = false;
-        scrollRect.vertical = false;
-        scrollRect.movementType = ScrollRect.MovementType.Clamped;
-        scrollRect.elasticity = 0f;
-        scrollRect.inertia = false;
-
-        if (scrollRect.horizontalScrollbar != null)
-            scrollRect.horizontalScrollbar.gameObject.SetActive(false);
-        if (scrollRect.verticalScrollbar != null)
-            scrollRect.verticalScrollbar.gameObject.SetActive(false);
-
-        if (scrollRect.viewport != null)
-        {
-            var vp = scrollRect.viewport;
-            vp.anchorMin = Vector2.zero;
-            vp.anchorMax = Vector2.one;
-            vp.pivot = new Vector2(0f, 1f);
-            vp.offsetMin = Vector2.zero;
-            vp.offsetMax = Vector2.zero;
-        }
-
-        var scrollRt = scrollRect.transform as RectTransform;
-        if (scrollRt != null)
-            LayoutRebuilder.ForceRebuildLayoutImmediate(scrollRt);
     }
 
     void ApplyPanelBackground()
@@ -218,6 +186,8 @@ public class AchievementPanelController : MonoBehaviour
         grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
         grid.constraintCount = GridColumns;
         grid.childAlignment = gridChildAlignment;
+        if (gridPadding == null)
+            gridPadding = new RectOffset(4, 4, 4, 4);
         grid.padding = gridPadding;
 
         var fit = contentRoot.GetComponent<ContentSizeFitter>();

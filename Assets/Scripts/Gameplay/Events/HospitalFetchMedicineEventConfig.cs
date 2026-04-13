@@ -15,13 +15,26 @@ namespace Gameplay.Events
         public Sprite defaultPlayerPortrait;
 
         [TextArea(1, 3)]
-        public string acceptPromptText = "按 空格 接受任务，按 Esc 拒绝。";
+        public string acceptPromptText = "按 空格 或 E 接受任务，按 Esc 拒绝。";
+
+        [Tooltip("取药成功后回到 NPC 时播放的感谢对白（空格推进）；为空则仍直接完成任务（与旧版一致）")]
+        public DialogueLine[] returnDialogueLines;
 
         [Header("任务 HUD（QuestPanelHud）")]
         [TextArea(1, 4)]
+        [Tooltip("前往取药途中（GoingToPickup）；若为空则回退用 activeQuestHudText")]
+        public string searchingHospitalHudText = "正在寻找医院";
+
+        [TextArea(1, 4)]
+        [Tooltip("兼容旧配置：未填 searchingHospitalHudText 时使用")]
         public string activeQuestHudText = "前往医院取药点取药。";
 
         [TextArea(1, 4)]
+        [Tooltip("在医院取药点按 E 取药成功后，任务栏第一行提示")]
+        public string pickupSuccessHudText = "取药成功";
+
+        [TextArea(1, 4)]
+        [Tooltip("取药成功后与 pickupSuccessHudText 一起显示（第二行），提示送回 NPC")]
         public string returnQuestHudText = "把药送回给同学。";
 
         [Header("打字机")]

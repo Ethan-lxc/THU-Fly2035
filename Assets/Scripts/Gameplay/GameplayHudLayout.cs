@@ -5,7 +5,7 @@ using UnityEngine.UI;
 
 /// <summary>
 /// 游戏内 HUD 总入口：<b>Title 开场单独场景 + 本场景单 Canvas 栈</b>。
-/// Hierarchy 约定在 <c>GameplayHUD</c> 下为 <c>HUD</c> / <c>Panels</c> / <c>Popups</c> 三个全屏拉伸空节点（同级顺序决定绘制先后，<c>Popups</c> 在最上）。
+/// Hierarchy 约定在 <c>GameplayHUD</c> 下为 <c>HUD</c> / <c>Panels</c> / <c>Popups</c> 三个全屏拉伸空节点（同级顺序决定绘制先后），以及可选的 <c>FailureHud</c>（失败全屏卡专用，建议放在最末子级以压在其它 UI 之上）。
 /// 常驻 elements、入口按钮放在 <c>HUD</c>；整块面板放 <c>Panels</c>；确认框、Toast 等放 <c>Popups</c>（必要时子节点可再挂高 <c>sortingOrder</c> 的 Canvas）。
 /// 各功能保持独立 Prefab + 单一职责控制器；模块间用事件 / 接口 / SO，避免 UI 直接耦合玩法内部。
 /// </summary>
@@ -17,12 +17,17 @@ public class GameplayHudLayout : MonoBehaviour
     [SerializeField] RectTransform panelsLayerRoot;
     [SerializeField] RectTransform popupsLayerRoot;
 
+    [Tooltip("失败画面专用根节点（与 HUD/Panels/Popups 同级）；空则 Awake 按名称 FailureHud 查找")]
+    [SerializeField] RectTransform failureHudRoot;
+
     /// <summary>运行时 Instantiate 面板时可挂到 <c>Panels</c> 下。</summary>
     public RectTransform HudLayerRoot => hudLayerRoot;
     /// <summary>整块面板层。</summary>
     public RectTransform PanelsLayerRoot => panelsLayerRoot;
     /// <summary>弹层（Toast / 确认框）；需更高层级时在此下再加子 Canvas 调高 sortingOrder。</summary>
     public RectTransform PopupsLayerRoot => popupsLayerRoot;
+    /// <summary>失败全屏 UI 根（挂 <see cref="FailureCardRevealOverlay"/> 等）。</summary>
+    public RectTransform FailureHudRoot => failureHudRoot;
 
     [Header("分区引用（可选，仅作总览）")]
     public MiniMapHud miniMapHud;
@@ -37,6 +42,9 @@ public class GameplayHudLayout : MonoBehaviour
 
     [Tooltip("全事件共用的奖励卡入口；各玩法只调 Offer，勿直接挂 RewardCardRevealPopup")]
     public RewardCardOfferService rewardCardOfferService;
+
+    [Header("失败 / 回档")]
+    public PlayerFailureController playerFailureController;
 
     [Header("点击 / 射线（解决设置等按钮点不到）")]
     [Tooltip("若 GameplayHUD 根 Rect 只有一小块，角落按钮在射线范围外；勾选时 Awake 将根 Rect 铺满父级，并尽量保持子物体在屏幕上的原位置（避免左侧 HUD 被摆出屏外）")]
@@ -92,6 +100,8 @@ public class GameplayHudLayout : MonoBehaviour
             panelsLayerRoot = transform.Find("Panels") as RectTransform;
         if (popupsLayerRoot == null)
             popupsLayerRoot = transform.Find("Popups") as RectTransform;
+        if (failureHudRoot == null)
+            failureHudRoot = transform.Find("FailureHud") as RectTransform;
     }
 
     /// <summary>打开设置/暂停菜单前：收起成就与背包，避免与暂停菜单叠在同一 <c>Panels</c> 层下互相遮挡。</summary>
@@ -152,7 +162,7 @@ public class GameplayHudLayout : MonoBehaviour
         for (var i = 0; i < n; i++)
         {
             var c = transform.GetChild(i);
-            if (c.name == "HUD" || c.name == "Panels" || c.name == "Popups")
+            if (c.name == "HUD" || c.name == "Panels" || c.name == "Popups" || c.name == "FailureHud")
                 continue;
             indices.Add(i);
             saved.Add(c.position);

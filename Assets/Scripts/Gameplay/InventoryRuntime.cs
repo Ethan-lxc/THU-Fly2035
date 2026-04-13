@@ -50,6 +50,19 @@ public class InventoryRuntime : MonoBehaviour
         _clues.Add(new ClueEntry { id = id, title = title, icon = icon });
         OnChanged?.Invoke();
     }
+
+    /// <summary>整表替换（如互动检查点回退）；会触发 <see cref="OnChanged"/>。</summary>
+    public void ReplaceClues(IReadOnlyList<ClueEntry> newClues)
+    {
+        _clues.Clear();
+        if (newClues != null)
+        {
+            for (var i = 0; i < newClues.Count; i++)
+                _clues.Add(newClues[i]);
+        }
+
+        OnChanged?.Invoke();
+    }
 }
 
 [Serializable]

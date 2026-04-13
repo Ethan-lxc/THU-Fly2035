@@ -1,0 +1,4 @@
+SaveCatNpcController 静态核对（Unity Play 需在编辑器内手测）：
+- PlayerPrefs: Quest_SaveCat_Complete、SaveCat_RewardCardStored 与身体不适/其他事件键不重复。
+- GameScene.unity 根物体「救猫」已挂 SaveCatNpcController，引用与「取药」NPC 同型的 dialoguePanel/statsHud/rewardCardOfferService/肖像/音效/成就卡图。
+- Q/E 分支与 SickClassmateNpcController 一致：Q 打 lineNpcAfterWrongHelp 后协程恢复可再互动；E 设完成态与奖励卡 Offer。

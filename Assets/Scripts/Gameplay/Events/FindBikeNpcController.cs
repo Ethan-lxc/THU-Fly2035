@@ -13,7 +13,7 @@ namespace Gameplay.Events
     /// 未挂 Collider2D 时会自动添加 <see cref="CircleCollider2D"/>（Trigger）。
     /// </summary>
     [AddComponentMenu("Gameplay/Events/Find Bike NPC Controller")]
-    public class FindBikeNpcController : MonoBehaviour, IWorldInteractable
+    public class FindBikeNpcController : MonoBehaviour, IWorldInteractable, IInteractionRewindTarget
     {
         [Header("对话 UI")]
         public GameplayDialoguePanel dialoguePanel;
@@ -310,7 +310,7 @@ namespace Gameplay.Events
             if (!CanInteract(interactor) || dialoguePanel == null)
                 return;
 
-            dialoguePanel.ExternalSessionBegin();
+            dialoguePanel.ExternalSessionBegin(this);
             _flow = Flow.NpcAskTyping;
             _visibleChars = 0;
             _typewriterCharsCarry = 0f;

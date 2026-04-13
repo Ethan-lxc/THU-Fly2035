@@ -4,7 +4,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
-/// 成就槽内单张卡：左键打开全屏欣赏层（半透明遮罩 + 大图），由 <see cref="AchievementPanelController"/> 提供。
+/// 槽内单张卡：左键打开全屏欣赏层；面板实现 <see cref="ICardPreviewSource"/>（成就台/背包等）。
 /// </summary>
 [DisallowMultipleComponent]
 public class AchievementCardClickZoom : MonoBehaviour, IPointerClickHandler
@@ -14,12 +14,18 @@ public class AchievementCardClickZoom : MonoBehaviour, IPointerClickHandler
 
     [SerializeField] string _boundPreviewTitle;
 
-    AchievementPanelController _panel;
+    ICardPreviewSource _preview;
 
-    /// <summary>应由 <see cref="AchievementPanelController.AddAchievementCard"/> 调用，传入与入库相同的 icon/title。</summary>
+    /// <summary>兼容旧调用：成就台入库。</summary>
     public void Configure(AchievementPanelController panel, Sprite previewSprite, string previewTitle)
     {
-        _panel = panel;
+        Configure((ICardPreviewSource)panel, previewSprite, previewTitle);
+    }
+
+    /// <summary>应由面板在放入卡时调用，传入与显示相同的 icon/title。</summary>
+    public void Configure(ICardPreviewSource preview, Sprite previewSprite, string previewTitle)
+    {
+        _preview = preview;
         _boundPreviewSprite = previewSprite;
         _boundPreviewTitle = previewTitle ?? string.Empty;
     }
@@ -29,12 +35,8 @@ public class AchievementCardClickZoom : MonoBehaviour, IPointerClickHandler
         if (eventData.button != PointerEventData.InputButton.Left)
             return;
 
-        var panel = _panel;
-        if (panel == null)
-            panel = GetComponentInParent<AchievementPanelController>();
-        if (panel == null)
-            panel = FindObjectOfType<AchievementPanelController>(true);
-        if (panel == null)
+        var preview = _preview ?? FindPreviewSourceInHierarchy(transform);
+        if (preview == null)
             return;
 
         var sprite = _boundPreviewSprite != null ? _boundPreviewSprite : FindPrimaryCardSprite();
@@ -49,7 +51,27 @@ public class AchievementCardClickZoom : MonoBehaviour, IPointerClickHandler
                 title = tmp.text;
         }
 
-        panel.ShowAchievementCardPreview(sprite, title ?? string.Empty);
+        preview.ShowAchievementCardPreview(sprite, title ?? string.Empty);
+    }
+
+    static ICardPreviewSource FindPreviewSourceInHierarchy(Transform start)
+    {
+        var t = start;
+        while (t != null)
+        {
+            foreach (var mb in t.GetComponents<MonoBehaviour>())
+            {
+                if (mb != null && mb is ICardPreviewSource ips)
+                    return ips;
+            }
+
+            t = t.parent;
+        }
+
+        var ach = Object.FindObjectOfType<AchievementPanelController>(true);
+        if (ach != null)
+            return ach;
+        return Object.FindObjectOfType<InventoryPanelController>(true);
     }
 
     /// <summary>

@@ -185,6 +185,7 @@ public class NpcEventJournalPanelController : MonoBehaviour
         entries = new List<EventRowEntry>
         {
             new EventRowEntry { displayName = "医院取药", achievementPlayerPrefsKey = "Quest_HospitalFetchMedicine_Completed", sortOrder = 0 },
+            new EventRowEntry { displayName = "超市校园卡", achievementPlayerPrefsKey = "Quest_SupermarketCampusCard_Completed", sortOrder = 9 },
             new EventRowEntry { displayName = "同学生病支线", achievementPlayerPrefsKey = "SickClassmate_RewardCardStored", sortOrder = 1 },
             new EventRowEntry { displayName = "指路事件", achievementPlayerPrefsKey = "DirectionGuide_RewardCardStored", sortOrder = 2 },
             new EventRowEntry { displayName = "找车任务", achievementPlayerPrefsKey = "FindBike_RewardCardStored", sortOrder = 3 },

@@ -10,7 +10,7 @@ namespace Gameplay.Events
     /// 指路事件 NPC：分支对白与奖励卡流程与 <see cref="SickClassmateNpcController"/> 相同，仅类名与默认存档键不同，便于单独挂载而无需与同学事件共用组件类型。
     /// 未挂 Collider2D 时会自动添加 <see cref="CircleCollider2D"/>（Trigger），避免 RequireComponent 导致无法在 Inspector 添加脚本。
     /// </summary>
-    public class DirectionGuideNpcController : MonoBehaviour, IWorldInteractable
+    public class DirectionGuideNpcController : MonoBehaviour, IWorldInteractable, IInteractionRewindTarget
     {
         [Header("对话 UI")]
         public GameplayDialoguePanel dialoguePanel;
@@ -315,7 +315,7 @@ namespace Gameplay.Events
             if (!CanInteract(interactor) || dialoguePanel == null)
                 return;
 
-            dialoguePanel.ExternalSessionBegin();
+            dialoguePanel.ExternalSessionBegin(this);
             _flow = Flow.NpcAskTyping;
             _visibleChars = 0;
             _typewriterCharsCarry = 0f;

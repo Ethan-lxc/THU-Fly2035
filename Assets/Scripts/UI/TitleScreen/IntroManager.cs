@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.Serialization;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
+using UnityEngine.Video;
 using TMPro;
 
 /// <summary>
@@ -232,6 +233,27 @@ public class IntroManager : MonoBehaviour
 
     [Tooltip("过渡开始时 SetTrigger；空则跳过")]
     public string transitionAnimatorTrigger = "";
+
+    [Header("阶段 3 — 过渡 · 视频（可选）")]
+    [Tooltip("在 TransitionPanel 内放 RawImage + VideoPlayer（或仅 VideoPlayer 指向 RenderTexture）；指定 clip 后，在「变亮」后的 Hold 阶段播放并等播完，可替代仅靠 transitionHoldSeconds 的等待")]
+    public VideoPlayer transitionVideoPlayer;
+
+    [Tooltip("若 VideoPlayer 上未指定 Clip，则使用此处；二者都空则不走视频")]
+    public VideoClip transitionVideoClip;
+
+    [Tooltip("为 true 时关闭视频音轨，避免与阶段 3 BGM 叠音")]
+    public bool transitionVideoMute = true;
+
+    [Tooltip("视频画面层（建议在 RawImage 父物体挂 CanvasGroup，与全屏遮罩 transitionCanvasGroup 为同级兄弟，避免父级 alpha 连带缩放）；空则自动在 transitionVideoPlayer 同物体/子级查找 CanvasGroup，再否则对 RawImage/Graphic 改颜色 alpha")]
+    public CanvasGroup transitionVideoCanvasGroup;
+
+    [Tooltip("视频开始后画面由暗变明的渐入时长（秒）；≤0 则立即全显")]
+    [Min(0f)]
+    public float transitionVideoFadeInSeconds = 0.45f;
+
+    [Tooltip("视频播完后画面由明变暗的渐出时长（秒）；≤0 则立即结束")]
+    [Min(0f)]
+    public float transitionVideoFadeOutSeconds = 0.45f;
 
     [Header("阶段 3 — 过渡 · 由暗变亮 → 占位 → 由亮变暗")]
     [Tooltip("进入阶段 3 时遮罩起始不透明度（1=全黑遮挡，再由暗变亮）")]
@@ -1294,6 +1316,112 @@ public class IntroManager : MonoBehaviour
     /// <summary>阶段 3 协程结束，过渡面板将关闭。</summary>
     protected virtual void OnTransitionPhase3Exit() { }
 
+    /// <summary>
+    /// Hold 阶段：优先播放 <see cref="transitionVideoPlayer"/>（并等播完）；否则仅等待 <see cref="transitionHoldSeconds"/>。
+    /// </summary>
+    IEnumerator RunTransitionHoldPhase()
+    {
+        if (transitionVideoPlayer != null &&
+            (transitionVideoClip != null || transitionVideoPlayer.clip != null))
+        {
+            yield return CoPlayTransitionVideoAndWait();
+            yield break;
+        }
+
+        yield return WaitRealtimeSeconds(transitionHoldSeconds);
+    }
+
+    IEnumerator CoPlayTransitionVideoAndWait()
+    {
+        var vp = transitionVideoPlayer;
+        if (vp == null)
+            yield break;
+
+        if (transitionVideoClip != null)
+            vp.clip = transitionVideoClip;
+
+        if (vp.clip == null)
+        {
+            yield return WaitRealtimeSeconds(transitionHoldSeconds);
+            yield break;
+        }
+
+        vp.isLooping = false;
+        if (transitionVideoMute)
+            vp.audioOutputMode = VideoAudioOutputMode.None;
+
+        vp.Stop();
+        vp.Prepare();
+        while (!vp.isPrepared)
+            yield return null;
+
+        var fadeGroup = ResolveTransitionVideoCanvasGroup();
+        var fadeGraphic = fadeGroup == null ? ResolveTransitionVideoGraphic() : null;
+        if (fadeGroup != null)
+            fadeGroup.alpha = 0f;
+        else if (fadeGraphic != null)
+            SetGraphicAlpha(fadeGraphic, 0f);
+
+        vp.Play();
+        yield return null;
+
+        if (fadeGroup != null && transitionVideoFadeInSeconds > 0f)
+            yield return FadeCanvasGroup(fadeGroup, 0f, 1f, transitionVideoFadeInSeconds);
+        else if (fadeGraphic != null && transitionVideoFadeInSeconds > 0f)
+            yield return FadeGraphicAlpha(fadeGraphic, 0f, 1f, transitionVideoFadeInSeconds);
+        else if (fadeGroup != null)
+            fadeGroup.alpha = 1f;
+        else if (fadeGraphic != null)
+            SetGraphicAlpha(fadeGraphic, 1f);
+
+        while (vp.isPlaying)
+            yield return null;
+
+        if (fadeGroup != null && transitionVideoFadeOutSeconds > 0f)
+            yield return FadeCanvasGroup(fadeGroup, fadeGroup.alpha, 0f, transitionVideoFadeOutSeconds);
+        else if (fadeGraphic != null && transitionVideoFadeOutSeconds > 0f)
+            yield return FadeGraphicAlpha(fadeGraphic, fadeGraphic.color.a, 0f, transitionVideoFadeOutSeconds);
+        else if (fadeGroup != null)
+            fadeGroup.alpha = 0f;
+        else if (fadeGraphic != null)
+            SetGraphicAlpha(fadeGraphic, 0f);
+
+        vp.Stop();
+    }
+
+    CanvasGroup ResolveTransitionVideoCanvasGroup()
+    {
+        if (transitionVideoCanvasGroup != null)
+            return transitionVideoCanvasGroup;
+        if (transitionVideoPlayer == null)
+            return null;
+        var cg = transitionVideoPlayer.GetComponent<CanvasGroup>();
+        if (cg != null)
+            return cg;
+        return transitionVideoPlayer.GetComponentInChildren<CanvasGroup>(true);
+    }
+
+    static Graphic ResolveTransitionVideoGraphicFor(VideoPlayer vp)
+    {
+        if (vp == null)
+            return null;
+        var raw = vp.GetComponent<RawImage>();
+        if (raw != null)
+            return raw;
+        raw = vp.GetComponentInChildren<RawImage>(true);
+        if (raw != null)
+            return raw;
+        var g = vp.GetComponent<Graphic>();
+        if (g != null)
+            return g;
+        return vp.GetComponentInChildren<Graphic>(true);
+    }
+
+    Graphic ResolveTransitionVideoGraphic()
+    {
+        return ResolveTransitionVideoGraphicFor(transitionVideoPlayer);
+    }
+
     IEnumerator DoTransition()
     {
         if (transitionPanel != null)
@@ -1328,7 +1456,7 @@ public class IntroManager : MonoBehaviour
 
             OnTransitionDarkToBrightComplete();
 
-            yield return WaitRealtimeSeconds(transitionHoldSeconds);
+            yield return RunTransitionHoldPhase();
 
             OnTransitionHoldComplete();
 
@@ -1357,7 +1485,7 @@ public class IntroManager : MonoBehaviour
             if (transitionBlackScreenEnabled && transitionBlackScreenSeconds > 0f)
                 yield return WaitRealtimeSeconds(transitionBlackScreenSeconds);
             OnTransitionDarkToBrightComplete();
-            yield return WaitRealtimeSeconds(transitionHoldSeconds);
+            yield return RunTransitionHoldPhase();
             OnTransitionHoldComplete();
             OnTransitionBrightToDarkComplete();
         }
@@ -1384,6 +1512,34 @@ public class IntroManager : MonoBehaviour
             yield return null;
         }
         group.alpha = to;
+    }
+
+    static void SetGraphicAlpha(Graphic g, float a)
+    {
+        if (g == null)
+            return;
+        var c = g.color;
+        c.a = a;
+        g.color = c;
+    }
+
+    static IEnumerator FadeGraphicAlpha(Graphic g, float from, float to, float duration)
+    {
+        if (g == null)
+            yield break;
+        if (duration <= 0f)
+        {
+            SetGraphicAlpha(g, to);
+            yield break;
+        }
+        var elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            SetGraphicAlpha(g, Mathf.Lerp(from, to, Mathf.Clamp01(elapsed / duration)));
+            yield return null;
+        }
+        SetGraphicAlpha(g, to);
     }
 
     void ShowMenuImmediate()

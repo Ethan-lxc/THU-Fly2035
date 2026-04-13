@@ -9,13 +9,21 @@ namespace Gameplay.Events
 {
     /// <summary>
     /// 身体不适同学 · 分支对白 NPC：靠近按 E 打开分支对话（与同物体其它 IWorldInteractable 二选一，勿同时挂两个）。
+    /// 可选绑定 <see cref="hospitalMedicineQuest"/>：选 E「去医院取药」会先播无人机与 NPC 指路对白，再进入 <see cref="HospitalFetchMedicineEvent"/> 取药流程；持药返回后再靠近互动可接续感谢与奖励。
+    /// 若任务配置 <see cref="HospitalFetchMedicineEventConfig.returnDialogueLines"/> 非空，送药回来时优先播该多段感谢；否则仍用本脚本的 <see cref="lineNpcThanksForMedicine"/> 单段感谢。
     /// 指路事件请用 <see cref="DirectionGuideNpcController"/>。多名该类 NPC 须配置不同的 <see cref="progressPlayerPrefsKey"/> 与 <see cref="medicinePathRewardStorageKey"/>。
     /// 未挂 Collider2D 时会自动添加 <see cref="CircleCollider2D"/>（Trigger）。
+    /// 与 <see cref="IWorldInteractableResolvePriority"/> 配合：同屏多目标时优先于地面拾取物。
     /// </summary>
-    public class SickClassmateNpcController : MonoBehaviour, IWorldInteractable
+    public class SickClassmateNpcController : MonoBehaviour, IWorldInteractable, IWorldInteractableResolvePriority,
+        IInteractionRewindTarget, IQuestNpcMood
     {
         [Header("对话 UI")]
         public GameplayDialoguePanel dialoguePanel;
+
+        [Header("医院取药（可选）")]
+        [Tooltip("填写后：选 E 先播无人机/NPC 两句再进入取药任务。空则运行时自动查找场景中的 HospitalFetchMedicineEvent（多个时优先 questNpc 指向本 NPC 的实例）。仍为空则走旧版「当场谢谢」短支。")]
+        public HospitalFetchMedicineEvent hospitalMedicineQuest;
 
         [Tooltip("空则 FindObjectOfType")]
         public PlayerStatsHud statsHud;
@@ -55,7 +63,7 @@ namespace Gameplay.Events
         public string lineDroneAcceptsHelp = "好吧让我想想办法";
 
         [TextArea(1, 3)]
-        public string promptAcceptOrDecline = "按 空格 接受帮助，按 Esc 拒绝";
+        public string promptAcceptOrDecline = "按 空格 或 E 接受帮助，按 Esc 拒绝";
 
         [TextArea(1, 4)]
         public string promptBranchChoices = "按 Q 去食堂取食物，按 E 去医院取药";
@@ -67,6 +75,19 @@ namespace Gameplay.Events
         [Tooltip("选 Q（食堂）后由同学说的台词")]
         [FormerlySerializedAs("lineDroneThanksForFood")]
         public string lineNpcThanksForFood = "谢谢你的吃的，不过我觉得我更需要一些胃药。";
+
+        [Header("分支 E · 去医院取药（已绑定 hospitalMedicineQuest 时）")]
+        [TextArea(1, 4)]
+        [Tooltip("按 E 选医院线后，无人机先说的台词")]
+        public string lineDroneOffersHospitalMedicine = "我去医院给你拿一些药吧。";
+
+        [TextArea(1, 4)]
+        [Tooltip("无人机说完后，NPC 指路")]
+        public string lineNpcHospitalDirections = "好的，医院就在西北角，拜托了。";
+
+        [TextArea(1, 2)]
+        [Tooltip("两句播完后，按空格或 E 关闭对白并开始取药流程")]
+        public string promptHospitalBranchContinue = "按 空格 或 E 继续";
 
         [Header("打字机")]
         [Tooltip("NPC 等正文打字音效")]
@@ -142,6 +163,11 @@ namespace Gameplay.Events
         [Min(0.1f)]
         public float qBranchNavigatingSeconds = 3f;
 
+        [Header("世界互动 E")]
+        [Min(0.1f)]
+        [Tooltip("无 Collider2D 时自动添加圆形触发器使用的半径；过小易导致无人机进不了互动范围")]
+        [SerializeField] float npcInteractTriggerRadius = 1.6f;
+
         [Header("回退（未完成取药前）")]
         [Tooltip("运行中按下此键执行回退；选 None 则不监听键盘")]
         public KeyCode resetToPreInteractKey = KeyCode.None;
@@ -157,6 +183,9 @@ namespace Gameplay.Events
             BranchWaitKey,
             BranchAfterQNpcTyping,
             BranchAfterQWaitSpace,
+            BranchAfterEHospitalDroneTyping,
+            BranchAfterEHospitalNpcTyping,
+            BranchAfterEHospitalWaitSpace,
             BranchAfterENpcTyping,
             BranchAfterEWaitSpace
         }
@@ -176,7 +205,22 @@ namespace Gameplay.Events
         bool _qBranchRecovering;
         Coroutine _qRecoverRoutine;
 
+        /// <summary>已选 E 且已发起医院取药，等待 <see cref="HospitalFetchMedicineEvent.Phase"/> 变为 HasMedicine 后再互动接续对白。</summary>
+        bool _awaitingMedicineFromHospital;
+
+        /// <summary>持药回到 NPC 并已打开感谢对白；在玩家按空格结束该段对白后再结算 <see cref="HospitalFetchMedicineEvent"/>（取药成功 + 奖励）。</summary>
+        bool _pendingHospitalQuestCompleteAfterEDialogue;
+
+        bool _warnedMissingDialoguePanel;
+
         AudioClip DroneTickClip => typewriterTickClipDrone != null ? typewriterTickClipDrone : typewriterTickClip;
+
+        public int WorldInteractResolvePriority => 100;
+
+        static bool AdvanceOrConfirmKeyDown()
+        {
+            return Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.E);
+        }
 
         string EffectiveProgressPrefsKey =>
             string.IsNullOrWhiteSpace(progressPlayerPrefsKey)
@@ -195,8 +239,14 @@ namespace Gameplay.Events
         {
             var col = GetComponent<Collider2D>();
             if (col == null)
-                col = Undo.AddComponent<CircleCollider2D>(gameObject);
-            if (col != null && !col.isTrigger)
+            {
+                var circle = Undo.AddComponent<CircleCollider2D>(gameObject);
+                Undo.RecordObject(circle, "SickClassmate Collider");
+                circle.isTrigger = true;
+                circle.radius = npcInteractTriggerRadius;
+                col = circle;
+            }
+            else if (col != null && !col.isTrigger)
             {
                 Undo.RecordObject(col, "SickClassmate Collider isTrigger");
                 col.isTrigger = true;
@@ -211,6 +261,7 @@ namespace Gameplay.Events
             {
                 var circle = gameObject.AddComponent<CircleCollider2D>();
                 circle.isTrigger = true;
+                circle.radius = npcInteractTriggerRadius;
                 return;
             }
             c.isTrigger = true;
@@ -231,7 +282,27 @@ namespace Gameplay.Events
                 SetMoodHappy();
 
             BranchingQuestNpcPromptUtil.DisableBobbingWorldSpritesUnder(promptRoot);
+            ResolveHospitalMedicineQuestIfNeeded();
             ApplyPromptRootVisibility();
+        }
+
+        void Start()
+        {
+            ResolveDialoguePanelIfNeeded();
+        }
+
+        void ResolveDialoguePanelIfNeeded()
+        {
+            if (dialoguePanel != null)
+                return;
+            dialoguePanel = FindObjectOfType<GameplayDialoguePanel>(true);
+            if (dialoguePanel == null && !_warnedMissingDialoguePanel)
+            {
+                _warnedMissingDialoguePanel = true;
+                Debug.LogWarning(
+                    $"{nameof(SickClassmateNpcController)} 「{name}」: 未找到 GameplayDialoguePanel，靠近按 E 无法开始对话。请在 Inspector 指定或确保场景中存在对白面板。",
+                    this);
+            }
         }
 
         void OnDisable()
@@ -294,25 +365,90 @@ namespace Gameplay.Events
                 rewardCardOfferService = FindObjectOfType<RewardCardOfferService>(true);
         }
 
+        void ResolveHospitalMedicineQuestIfNeeded()
+        {
+            if (hospitalMedicineQuest != null)
+                return;
+
+            var all = FindObjectsOfType<HospitalFetchMedicineEvent>(true);
+            if (all == null || all.Length == 0)
+                return;
+
+            if (all.Length == 1)
+            {
+                hospitalMedicineQuest = all[0];
+                return;
+            }
+
+            var self = (MonoBehaviour)this;
+            foreach (var h in all)
+            {
+                if (h != null && h.questNpc == self)
+                {
+                    hospitalMedicineQuest = h;
+                    return;
+                }
+            }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.LogWarning(
+                $"{nameof(SickClassmateNpcController)} 「{name}」: 场景中存在多个 HospitalFetchMedicineEvent，且未将 questNpc 指向本 NPC；已回退使用第一个实例，取药分支可能连错任务。请在 HospitalFetchMedicineEvent 上把 Quest Npc 设为此同学，或在 SickClassmate 上手动指定 Hospital Medicine Quest。",
+                this);
+#endif
+            hospitalMedicineQuest = all[0];
+        }
+
         public bool CanInteract(Transform interactor)
         {
+            if (dialoguePanel == null)
+                ResolveDialoguePanelIfNeeded();
+            if (dialoguePanel == null)
+                return false;
+
             if (_medicineComplete)
                 return false;
             if (_qBranchRecovering)
                 return false;
-            if (_flow != Flow.Idle)
+            if (dialoguePanel.IsOpen)
                 return false;
-            if (dialoguePanel != null && dialoguePanel.IsOpen)
+
+            if (_awaitingMedicineFromHospital)
+            {
+                if (hospitalMedicineQuest == null)
+                {
+                    _awaitingMedicineFromHospital = false;
+                    return false;
+                }
+
+                if (hospitalMedicineQuest.Phase != HospitalFetchMedicineEvent.QuestPhase.HasMedicine)
+                    return false;
+                if (_flow != Flow.Idle)
+                    return false;
+                return true;
+            }
+
+            if (_flow != Flow.Idle)
                 return false;
             return true;
         }
 
         public void BeginInteract(Transform interactor)
         {
-            if (!CanInteract(interactor) || dialoguePanel == null)
+            ResolveDialoguePanelIfNeeded();
+            if (dialoguePanel == null)
                 return;
 
-            dialoguePanel.ExternalSessionBegin();
+            if (_awaitingMedicineFromHospital && hospitalMedicineQuest != null &&
+                hospitalMedicineQuest.Phase == HospitalFetchMedicineEvent.QuestPhase.HasMedicine)
+            {
+                BeginMedicineReturnThanksFlow();
+                return;
+            }
+
+            if (!CanInteract(interactor))
+                return;
+
+            dialoguePanel.ExternalSessionBegin(this);
             _flow = Flow.NpcAskTyping;
             _visibleChars = 0;
             _typewriterCharsCarry = 0f;
@@ -324,6 +460,7 @@ namespace Gameplay.Events
             dialoguePanel.ExternalClearBody();
             dialoguePanel.ExternalEnsureBodyVisible();
             dialoguePanel.ExternalSetChoicePrompt(false, null);
+            ResolveHospitalMedicineQuestIfNeeded();
             ApplyPromptRootVisibility();
         }
 
@@ -364,6 +501,15 @@ namespace Gameplay.Events
                 case Flow.BranchAfterQWaitSpace:
                     UpdateBranchAfterQWaitSpace();
                     break;
+                case Flow.BranchAfterEHospitalDroneTyping:
+                    UpdateBranchAfterEHospitalDroneTyping();
+                    break;
+                case Flow.BranchAfterEHospitalNpcTyping:
+                    UpdateBranchAfterEHospitalNpcTyping();
+                    break;
+                case Flow.BranchAfterEHospitalWaitSpace:
+                    UpdateBranchAfterEHospitalWaitSpace();
+                    break;
                 case Flow.BranchAfterENpcTyping:
                     UpdateBranchAfterENpcTyping();
                     break;
@@ -378,7 +524,7 @@ namespace Gameplay.Events
             dialoguePanel.ExternalApplyPortraitRightOnly(npcPortrait);
             var full = lineNpcAsksHelp ?? string.Empty;
 
-            if (Input.GetKeyDown(KeyCode.Space) && !_lineDone)
+            if (AdvanceOrConfirmKeyDown() && !_lineDone)
             {
                 TypewriterTMP.RevealFullText(dialoguePanel.bodyText, full);
                 _visibleChars = full.Length;
@@ -424,7 +570,7 @@ namespace Gameplay.Events
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (AdvanceOrConfirmKeyDown())
             {
                 dialoguePanel.ExternalSetChoicePrompt(false, null);
                 dialoguePanel.ExternalClearBody();
@@ -442,7 +588,7 @@ namespace Gameplay.Events
         {
             var full = lineDroneAcceptsHelp ?? string.Empty;
 
-            if (Input.GetKeyDown(KeyCode.Space) && !_lineDone)
+            if (AdvanceOrConfirmKeyDown() && !_lineDone)
             {
                 TypewriterTMP.RevealFullText(dialoguePanel.bodyText, full);
                 _visibleChars = full.Length;
@@ -473,7 +619,7 @@ namespace Gameplay.Events
         {
             var full = lineDroneRefuses ?? string.Empty;
 
-            if (Input.GetKeyDown(KeyCode.Space) && !_lineDone)
+            if (AdvanceOrConfirmKeyDown() && !_lineDone)
             {
                 TypewriterTMP.RevealFullText(dialoguePanel.bodyText, full);
                 _visibleChars = full.Length;
@@ -499,7 +645,7 @@ namespace Gameplay.Events
 
         void UpdateRejectWaitConfirm()
         {
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (AdvanceOrConfirmKeyDown())
             {
                 ResolveStatsHud();
                 if (statsHud != null)
@@ -543,12 +689,73 @@ namespace Gameplay.Events
                 StopQRecoverRoutine(clearFlags: true);
 
                 dialoguePanel.ExternalSetChoicePrompt(false, null);
+
+                ResolveHospitalMedicineQuestIfNeeded();
+                if (hospitalMedicineQuest != null)
+                    hospitalMedicineQuest.ResetPhaseForCompanionBranchIfStale(_medicineComplete);
+
+                if (hospitalMedicineQuest != null &&
+                    hospitalMedicineQuest.Phase != HospitalFetchMedicineEvent.QuestPhase.Completed)
+                {
+                    // 医院取药线：不扣情感度，避免对话结束后触发情感失败与失败音效（取药是正向任务）
+                    ResolveStatsHud();
+                    if (statsHud != null)
+                        statsHud.AddProfessionalism(1f);
+
+                    if (hospitalMedicineQuest.Phase == HospitalFetchMedicineEvent.QuestPhase.HasMedicine)
+                    {
+                        _awaitingMedicineFromHospital = true;
+                        ApplyUnwellMood();
+                        ApplyPromptRootVisibility();
+                        EndDialogue();
+                        return;
+                    }
+
+                    // 已在取药途中再次打开分支：不重复播无人机/NPC 两句，直接刷新取药点并关对白
+                    if (hospitalMedicineQuest.Phase == HospitalFetchMedicineEvent.QuestPhase.GoingToPickup)
+                    {
+                        hospitalMedicineQuest.EnterGoingToPickupFromBranchingDialogue();
+                        _awaitingMedicineFromHospital = true;
+                        ApplyUnwellMood();
+                        ApplyPromptRootVisibility();
+                        EndDialogue();
+                        return;
+                    }
+
+                    // 首次选 E：先播无人机承诺 + NPC 指路，再按空格进入取药阶段
+                    dialoguePanel.ExternalClearBody();
+                    dialoguePanel.ExternalEnsureBodyVisible();
+                    dialoguePanel.ExternalApplyPortraitRightOnly(dronePortrait);
+                    _visibleChars = 0;
+                    _typewriterCharsCarry = 0f;
+                    _lastTick = 0f;
+                    _lineDone = false;
+                    _flow = Flow.BranchAfterEHospitalDroneTyping;
+                    return;
+                }
+
+                // 无医院任务：沿用旧版 E 线（专业度+1、情感度-1）
                 ResolveStatsHud();
                 if (statsHud != null)
                 {
                     statsHud.AddProfessionalism(1f);
                     statsHud.AddEmotion(-1f);
                 }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (hospitalMedicineQuest == null)
+                {
+                    Debug.LogWarning(
+                        $"{nameof(SickClassmateNpcController)} 「{name}」: 按 E 时未找到 HospitalFetchMedicineEvent，将走无医院任务的「谢谢」短支。请在场景放置该组件或在本脚本指定 Hospital Medicine Quest。",
+                        this);
+                }
+                else if (hospitalMedicineQuest.Phase == HospitalFetchMedicineEvent.QuestPhase.Completed)
+                {
+                    Debug.LogWarning(
+                        $"{nameof(SickClassmateNpcController)} 「{name}」: HospitalFetchMedicineEvent 仍为 Completed（且同伴线未完成时本应已尝试拉回 Inactive）。将走「谢谢」短支；请检查任务状态或存档键。",
+                        this);
+                }
+#endif
 
                 _medicineComplete = true;
                 if (!skipPersistentProgress)
@@ -570,12 +777,92 @@ namespace Gameplay.Events
             }
         }
 
+        void BeginMedicineReturnThanksFlow()
+        {
+            _awaitingMedicineFromHospital = false;
+            ResolveHospitalMedicineQuestIfNeeded();
+
+            var cfg = hospitalMedicineQuest != null ? hospitalMedicineQuest.config : null;
+            if (cfg != null && cfg.returnDialogueLines != null && cfg.returnDialogueLines.Length > 0 &&
+                dialoguePanel != null)
+            {
+                var tempCfg = ScriptableObject.CreateInstance<HospitalFetchMedicineEventConfig>();
+                tempCfg.dialogueLines = cfg.returnDialogueLines;
+                tempCfg.defaultNpcPortrait = cfg.defaultNpcPortrait;
+                tempCfg.defaultPlayerPortrait = cfg.defaultPlayerPortrait;
+                tempCfg.charsPerSecond = cfg.charsPerSecond;
+                tempCfg.minTypewriterTickInterval = cfg.minTypewriterTickInterval;
+                tempCfg.typewriterTickClip = cfg.typewriterTickClip;
+                tempCfg.typewriterSfxVolume = cfg.typewriterSfxVolume;
+
+                if (dialoguePanel.BeginNarrativeSequence(tempCfg, () =>
+                    {
+                        Destroy(tempCfg);
+                        FinishMedicineHospitalReturnAfterConfigThankYou();
+                    }))
+                {
+                    _flow = Flow.Idle;
+                    ApplyPromptRootVisibility();
+                    return;
+                }
+
+                Destroy(tempCfg);
+            }
+
+            _pendingHospitalQuestCompleteAfterEDialogue = true;
+            _rewardCardOfferedThisSession = false;
+            dialoguePanel.ExternalSessionBegin(this);
+            _flow = Flow.BranchAfterENpcTyping;
+            _visibleChars = 0;
+            _typewriterCharsCarry = 0f;
+            _lastTick = 0f;
+            _lineDone = false;
+
+            dialoguePanel.ExternalApplyPortraitRightOnly(npcPortrait);
+            dialoguePanel.ExternalClearBody();
+            dialoguePanel.ExternalEnsureBodyVisible();
+            dialoguePanel.ExternalSetChoicePrompt(false, null);
+            ApplyPromptRootVisibility();
+        }
+
+        /// <summary>
+        /// 使用任务配置里 <see cref="HospitalFetchMedicineEventConfig.returnDialogueLines"/> 播完送药感谢后，结算医院任务与同学线奖励。
+        /// </summary>
+        void FinishMedicineHospitalReturnAfterConfigThankYou()
+        {
+            if (hospitalMedicineQuest != null)
+                hospitalMedicineQuest.CompleteQuestIfHasMedicine();
+            _medicineComplete = true;
+            if (!skipPersistentProgress)
+            {
+                PlayerPrefs.SetInt(EffectiveProgressPrefsKey, 1);
+                PlayerPrefs.Save();
+            }
+            SetMoodHappy();
+            ApplyPromptRootVisibility();
+
+            ResolveRewardOfferService();
+            if (rewardCardOfferService != null && medicinePathRewardCardSprite != null &&
+                !string.IsNullOrEmpty(medicinePathRewardStorageKey))
+            {
+                _rewardCardOfferedThisSession = true;
+                NpcEventOutcomeAudio.PlayClip2D(rewardVictoryMusicClip, dialogueOutcomeMusicVolume);
+                rewardCardOfferService.Offer(
+                    medicinePathRewardCardSprite,
+                    medicinePathRewardCardTitle,
+                    medicinePathRewardStorageKey,
+                    persistPlayerPrefs: !skipPersistentProgress);
+            }
+            else
+                EndDialogue();
+        }
+
         void UpdateBranchAfterQNpcTyping()
         {
             dialoguePanel.ExternalApplyPortraitRightOnly(npcPortrait);
             var full = lineNpcThanksForFood ?? string.Empty;
 
-            if (Input.GetKeyDown(KeyCode.Space) && !_lineDone)
+            if (AdvanceOrConfirmKeyDown() && !_lineDone)
             {
                 TypewriterTMP.RevealFullText(dialoguePanel.bodyText, full);
                 _visibleChars = full.Length;
@@ -601,13 +888,109 @@ namespace Gameplay.Events
 
         void UpdateBranchAfterQWaitSpace()
         {
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (AdvanceOrConfirmKeyDown())
             {
                 EndDialogue();
                 ApplyPromptRootVisibility();
                 StopQRecoverRoutine(clearFlags: false);
                 _qRecoverRoutine = StartCoroutine(QBranchRecoverRoutine());
             }
+        }
+
+        void UpdateBranchAfterEHospitalDroneTyping()
+        {
+            dialoguePanel.ExternalApplyPortraitRightOnly(dronePortrait);
+            var full = lineDroneOffersHospitalMedicine ?? string.Empty;
+
+            if (AdvanceOrConfirmKeyDown() && !_lineDone)
+            {
+                TypewriterTMP.RevealFullText(dialoguePanel.bodyText, full);
+                _visibleChars = full.Length;
+                _typewriterCharsCarry = 0f;
+                _lineDone = true;
+            }
+            else if (!_lineDone)
+            {
+                _lineDone = dialoguePanel.ExternalTypewriterStep(
+                    full,
+                    ref _visibleChars,
+                    ref _typewriterCharsCarry,
+                    ref _lastTick,
+                    droneCharsPerSecond,
+                    droneMinTypewriterTickInterval,
+                    DroneTickClip,
+                    typewriterSfxVolume);
+            }
+
+            if (_lineDone)
+            {
+                dialoguePanel.ExternalClearBody();
+                dialoguePanel.ExternalEnsureBodyVisible();
+                dialoguePanel.ExternalApplyPortraitRightOnly(npcPortrait);
+                _visibleChars = 0;
+                _typewriterCharsCarry = 0f;
+                _lastTick = 0f;
+                _lineDone = false;
+                _flow = Flow.BranchAfterEHospitalNpcTyping;
+            }
+        }
+
+        void UpdateBranchAfterEHospitalNpcTyping()
+        {
+            dialoguePanel.ExternalApplyPortraitRightOnly(npcPortrait);
+            var full = lineNpcHospitalDirections ?? string.Empty;
+
+            if (AdvanceOrConfirmKeyDown() && !_lineDone)
+            {
+                TypewriterTMP.RevealFullText(dialoguePanel.bodyText, full);
+                _visibleChars = full.Length;
+                _typewriterCharsCarry = 0f;
+                _lineDone = true;
+            }
+            else if (!_lineDone)
+            {
+                _lineDone = dialoguePanel.ExternalTypewriterStep(
+                    full,
+                    ref _visibleChars,
+                    ref _typewriterCharsCarry,
+                    ref _lastTick,
+                    npcCharsPerSecond,
+                    npcMinTypewriterTickInterval,
+                    typewriterTickClip,
+                    typewriterSfxVolume);
+            }
+
+            if (_lineDone)
+            {
+                dialoguePanel.ExternalSetChoicePrompt(true, promptHospitalBranchContinue);
+                _flow = Flow.BranchAfterEHospitalWaitSpace;
+            }
+        }
+
+        void UpdateBranchAfterEHospitalWaitSpace()
+        {
+            if (!AdvanceOrConfirmKeyDown())
+                return;
+
+            dialoguePanel.ExternalSetChoicePrompt(false, null);
+
+            if (hospitalMedicineQuest == null)
+            {
+                EndDialogue();
+                return;
+            }
+
+            hospitalMedicineQuest.EnterGoingToPickupFromBranchingDialogue();
+            if (hospitalMedicineQuest.Phase == HospitalFetchMedicineEvent.QuestPhase.GoingToPickup)
+            {
+                _awaitingMedicineFromHospital = true;
+                ApplyUnwellMood();
+                ApplyPromptRootVisibility();
+                EndDialogue();
+                return;
+            }
+
+            EndDialogue();
         }
 
         IEnumerator QBranchRecoverRoutine()
@@ -637,7 +1020,7 @@ namespace Gameplay.Events
             dialoguePanel.ExternalApplyPortraitRightOnly(npcPortrait);
             var full = lineNpcThanksForMedicine ?? string.Empty;
 
-            if (Input.GetKeyDown(KeyCode.Space) && !_lineDone)
+            if (AdvanceOrConfirmKeyDown() && !_lineDone)
             {
                 TypewriterTMP.RevealFullText(dialoguePanel.bodyText, full);
                 _visibleChars = full.Length;
@@ -663,8 +1046,23 @@ namespace Gameplay.Events
 
         void UpdateBranchAfterEWaitSpace()
         {
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (!AdvanceOrConfirmKeyDown())
+                return;
+
+            if (_pendingHospitalQuestCompleteAfterEDialogue)
             {
+                _pendingHospitalQuestCompleteAfterEDialogue = false;
+                if (hospitalMedicineQuest != null)
+                    hospitalMedicineQuest.CompleteQuestIfHasMedicine();
+                _medicineComplete = true;
+                if (!skipPersistentProgress)
+                {
+                    PlayerPrefs.SetInt(EffectiveProgressPrefsKey, 1);
+                    PlayerPrefs.Save();
+                }
+                SetMoodHappy();
+                ApplyPromptRootVisibility();
+
                 ResolveRewardOfferService();
                 if (rewardCardOfferService != null && medicinePathRewardCardSprite != null &&
                     !string.IsNullOrEmpty(medicinePathRewardStorageKey))
@@ -680,7 +1078,10 @@ namespace Gameplay.Events
                 }
                 else
                     EndDialogue();
+                return;
             }
+
+            EndDialogue();
         }
 
         void EndDialogue()
@@ -719,6 +1120,11 @@ namespace Gameplay.Events
                 PlayerPrefs.Save();
             }
             _medicineComplete = false;
+            _awaitingMedicineFromHospital = false;
+            _pendingHospitalQuestCompleteAfterEDialogue = false;
+            if (hospitalMedicineQuest != null &&
+                hospitalMedicineQuest.Phase != HospitalFetchMedicineEvent.QuestPhase.Completed)
+                hospitalMedicineQuest.CancelCompanionBranchFlowToInactive();
 
             ApplyUnwellMood();
             ApplyPromptRootVisibility();

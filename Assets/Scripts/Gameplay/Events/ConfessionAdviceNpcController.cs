@@ -13,7 +13,7 @@ namespace Gameplay.Events
     /// 未挂 Collider2D 时会自动添加 <see cref="CircleCollider2D"/>（Trigger）。
     /// </summary>
     [AddComponentMenu("Gameplay/Events/Confession Advice NPC Controller")]
-    public class ConfessionAdviceNpcController : MonoBehaviour, IWorldInteractable
+    public class ConfessionAdviceNpcController : MonoBehaviour, IWorldInteractable, IInteractionRewindTarget
     {
         [Header("对话 UI")]
         public GameplayDialoguePanel dialoguePanel;
@@ -354,7 +354,7 @@ namespace Gameplay.Events
                 return;
             }
 
-            dialoguePanel.ExternalSessionBegin();
+            dialoguePanel.ExternalSessionBegin(this);
             _flow = Flow.NpcAskTyping;
             _visibleChars = 0;
             _typewriterCharsCarry = 0f;
@@ -372,7 +372,7 @@ namespace Gameplay.Events
 
         void BeginStatsInsufficientFlow()
         {
-            dialoguePanel.ExternalSessionBegin();
+            dialoguePanel.ExternalSessionBegin(this);
             _flow = Flow.StatsGateDroneTyping;
             _visibleChars = 0;
             _typewriterCharsCarry = 0f;

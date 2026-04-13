@@ -36,6 +36,9 @@ public class AchievementCardViewerOverlay : MonoBehaviour
 
     public Sprite editorPreviewSprite;
 
+    /// <summary>为 true 时：Esc 与点击遮罩/大图关闭无效，仅允许脚本 <see cref="Hide"/>（如失败卡流程）。</summary>
+    public bool suppressUserDismiss;
+
     [Header("音效（查看大卡；Time.timeScale=0 时仍播放）")]
     [Tooltip("打开欣赏层时；留空则静音")]
     public AudioClip previewOpenClickClip;
@@ -48,6 +51,12 @@ public class AchievementCardViewerOverlay : MonoBehaviour
 
     CanvasGroup _canvasGroup;
     AudioSource _viewerSfx;
+
+    Transform _runtimeReparentOriginalParent;
+    int _runtimeReparentOriginalSiblingIndex = -1;
+
+    bool _failureTopCanvasAdded;
+    bool _failureRaycasterAdded;
 
 #if UNITY_EDITOR
     static Sprite _editorWhiteSprite;
@@ -90,24 +99,91 @@ public class AchievementCardViewerOverlay : MonoBehaviour
     {
         if (!Application.isPlaying)
             return;
+        if (suppressUserDismiss)
+            return;
         if (_canvasGroup != null && _canvasGroup.alpha > 0.01f && Input.GetKeyDown(KeyCode.Escape))
             Hide();
     }
 
     public void Show(Sprite sprite, string title)
     {
-        EnsureBuilt();
-        if (cardDisplayImage == null)
+        Show(sprite, title, playPreviewOpenSound: true);
+    }
+
+    /// <summary>
+    /// 挂到场景 <see cref="Canvas.rootCanvas"/> 下并全屏拉伸，避免嵌套在成就面板等子 Canvas 里被遮挡或受父级 <see cref="CanvasGroup"/> 影响。
+    /// 与 <see cref="RestoreRuntimeParentIfReparented"/> 成对调用。
+    /// </summary>
+    public void ReparentUnderCanvasRootAndStretch()
+    {
+        var rt = transform as RectTransform;
+        if (rt == null)
             return;
+
+        var canvas = GetComponentInParent<Canvas>();
+        if (canvas == null)
+            return;
+
+        var root = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
+        if (transform.parent == root.transform)
+        {
+            StretchFull(rt);
+            transform.SetAsLastSibling();
+            return;
+        }
+
+        if (_runtimeReparentOriginalParent == null)
+        {
+            _runtimeReparentOriginalParent = transform.parent;
+            _runtimeReparentOriginalSiblingIndex = transform.GetSiblingIndex();
+        }
+
+        transform.SetParent(root.transform, false);
+        SetLayerRecursively(transform, root.gameObject.layer);
+        StretchFull(rt);
+        transform.SetAsLastSibling();
+    }
+
+    static void SetLayerRecursively(Transform t, int layer)
+    {
+        t.gameObject.layer = layer;
+        for (var i = 0; i < t.childCount; i++)
+            SetLayerRecursively(t.GetChild(i), layer);
+    }
+
+    public void RestoreRuntimeParentIfReparented()
+    {
+        if (_runtimeReparentOriginalParent == null)
+            return;
+
+        var p = _runtimeReparentOriginalParent;
+        var idx = _runtimeReparentOriginalSiblingIndex;
+        _runtimeReparentOriginalParent = null;
+        _runtimeReparentOriginalSiblingIndex = -1;
+
+        transform.SetParent(p, false);
+        if (idx >= 0 && p != null && idx < p.childCount)
+            transform.SetSiblingIndex(idx);
+    }
+
+    public void Show(Sprite sprite, string title, bool playPreviewOpenSound)
+    {
+        EnsureBuilt();
 
         SetRuntimeRaycastsAndCloseHandlers(true);
 
-        cardDisplayImage.type = Image.Type.Simple;
-        cardDisplayImage.preserveAspect = true;
-        cardDisplayImage.sprite = sprite;
-        cardDisplayImage.enabled = sprite != null;
-        cardDisplayImage.color = Color.white;
-        cardDisplayImage.SetAllDirty();
+        if (suppressUserDismiss)
+            EnsureFailureDrawsAboveAllHud();
+
+        if (cardDisplayImage != null)
+        {
+            cardDisplayImage.type = Image.Type.Simple;
+            cardDisplayImage.preserveAspect = true;
+            cardDisplayImage.sprite = sprite;
+            cardDisplayImage.enabled = sprite != null;
+            cardDisplayImage.color = Color.white;
+            cardDisplayImage.SetAllDirty();
+        }
 
         if (cardTitleText != null)
         {
@@ -118,13 +194,74 @@ public class AchievementCardViewerOverlay : MonoBehaviour
 
         gameObject.SetActive(true);
         transform.SetAsLastSibling();
-        _canvasGroup.alpha = 1f;
-        _canvasGroup.interactable = true;
-        _canvasGroup.blocksRaycasts = true;
+        if (_canvasGroup != null)
+        {
+            if (suppressUserDismiss)
+                _canvasGroup.ignoreParentGroups = true;
+            _canvasGroup.alpha = 1f;
+            _canvasGroup.interactable = true;
+            _canvasGroup.blocksRaycasts = true;
+        }
 
         Canvas.ForceUpdateCanvases();
 
-        PlayPreviewOpenSound();
+        if (suppressUserDismiss)
+            ApplyLockedDismissUi();
+        if (playPreviewOpenSound)
+            PlayPreviewOpenSound();
+    }
+
+    /// <summary>遮罩挡点击穿通，但禁用点击关闭与关闭音效。</summary>
+    void ApplyLockedDismissUi()
+    {
+        if (dimImage != null)
+            dimImage.raycastTarget = true;
+        if (cardDisplayImage != null)
+            cardDisplayImage.raycastTarget = false;
+        if (cardTitleText != null)
+            cardTitleText.raycastTarget = false;
+        foreach (var c in GetComponentsInChildren<AchievementCardViewerCloseClick>(true))
+            c.enabled = false;
+    }
+
+    /// <summary>失败层：本物体原无 Canvas 时加嵌套 Overlay + 超高 sortingOrder，避免被其它 UI/嵌套 Canvas 盖住。</summary>
+    void EnsureFailureDrawsAboveAllHud()
+    {
+        if (GetComponent<Canvas>() != null)
+            return;
+
+        var cv = gameObject.AddComponent<Canvas>();
+        cv.overrideSorting = true;
+        cv.sortingOrder = 32000;
+        _failureTopCanvasAdded = true;
+
+        if (GetComponent<GraphicRaycaster>() == null)
+        {
+            gameObject.AddComponent<GraphicRaycaster>();
+            _failureRaycasterAdded = true;
+        }
+    }
+
+    void TearDownFailureDrawBoost()
+    {
+        if (_failureRaycasterAdded)
+        {
+            var gr = GetComponent<GraphicRaycaster>();
+            if (gr != null)
+                Destroy(gr);
+            _failureRaycasterAdded = false;
+        }
+
+        if (_failureTopCanvasAdded)
+        {
+            var cv = GetComponent<Canvas>();
+            if (cv != null)
+                Destroy(cv);
+            _failureTopCanvasAdded = false;
+        }
+
+        if (_canvasGroup != null)
+            _canvasGroup.ignoreParentGroups = false;
     }
 
     void EnsureViewerSfxSource()
@@ -159,12 +296,17 @@ public class AchievementCardViewerOverlay : MonoBehaviour
 
     public void Hide()
     {
-        if (_canvasGroup == null)
-            return;
-        _canvasGroup.alpha = 0f;
-        _canvasGroup.interactable = false;
-        _canvasGroup.blocksRaycasts = false;
-        gameObject.SetActive(false);
+        TearDownFailureDrawBoost();
+
+        if (_canvasGroup != null)
+        {
+            _canvasGroup.alpha = 0f;
+            _canvasGroup.interactable = false;
+            _canvasGroup.blocksRaycasts = false;
+        }
+
+        if (Application.isPlaying)
+            gameObject.SetActive(false);
 
 #if UNITY_EDITOR
         if (!Application.isPlaying && showLayoutInEditMode)
@@ -433,6 +575,8 @@ public class AchievementCardViewerCloseClick : MonoBehaviour, IPointerClickHandl
     public void OnPointerClick(PointerEventData eventData)
     {
         if (!Application.isPlaying)
+            return;
+        if (Owner != null && Owner.suppressUserDismiss)
             return;
         if (eventData.button != PointerEventData.InputButton.Left)
             return;

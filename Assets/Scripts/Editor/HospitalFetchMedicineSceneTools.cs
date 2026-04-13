@@ -87,5 +87,85 @@ public static class HospitalFetchMedicineSceneTools
         EditorGUIUtility.PingObject(asset);
         Selection.activeObject = asset;
     }
+
+    /// <summary>超市校园卡（扫描寻回）：仍用 HospitalFetchMedicineEventConfig，独立存档键与文案。</summary>
+    [MenuItem(MenuRoot + "Create Supermarket Campus Card Config (same script, new asset)", false, 21)]
+    public static void CreateSupermarketCampusCardConfig()
+    {
+        var path = EditorUtility.SaveFilePanelInProject(
+            "保存超市校园卡任务配置（HospitalFetchMedicineEventConfig）",
+            "SupermarketCampusCardQuest",
+            "asset",
+            "选择保存路径");
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        var asset = ScriptableObject.CreateInstance<HospitalFetchMedicineEventConfig>();
+        asset.dialogueLines = new[]
+        {
+            new DialogueLine
+            {
+                speaker = DialogueSpeaker.Npc,
+                text = "我在超市里把校园卡弄丢了，你能帮我找回来吗？",
+            },
+            new DialogueLine
+            {
+                speaker = DialogueSpeaker.Player,
+                text = "我先开扫描模式在超市里找找。",
+            },
+        };
+        asset.searchingHospitalHudText = "正在寻找超市内的校园卡。";
+        asset.activeQuestHudText = "在超市内寻找校园卡。";
+        asset.pickupSuccessHudText = "已找到校园卡。";
+        asset.returnQuestHudText = "把校园卡交还给失主。";
+        asset.rewardClueId = "supermarket_campus_card_clue";
+        asset.rewardClueTitle = "校园卡线索";
+        asset.playerPrefsCompletedKey = "Quest_SupermarketCampusCard_Completed";
+        asset.rewardAchievementTitle = "寻回校园卡";
+
+        AssetDatabase.CreateAsset(asset, path);
+        AssetDatabase.SaveAssets();
+        EditorGUIUtility.PingObject(asset);
+        Selection.activeObject = asset;
+    }
+
+    [MenuItem(MenuRoot + "Create Supermarket Scan Mode Controller", false, 30)]
+    public static void CreateSupermarketScanModeController()
+    {
+        if (Object.FindObjectOfType<SupermarketScanModeController>() != null)
+        {
+            Debug.Log("SupermarketScanModeController 已存在。");
+            return;
+        }
+
+        var go = new GameObject("SupermarketScanModeController");
+        Undo.RegisterCreatedObjectUndo(go, "Create SupermarketScanModeController");
+        go.AddComponent<SupermarketScanModeController>();
+        Selection.activeGameObject = go;
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+    }
+
+    [MenuItem(MenuRoot + "Create Supermarket Campus Card NPC (placeholder)", false, 31)]
+    public static void CreateSupermarketCampusCardNpc()
+    {
+        var go = new GameObject("SupermarketCampusCard_NPC");
+        Undo.RegisterCreatedObjectUndo(go, "Create SupermarketCampusCard_NPC");
+        var col = go.AddComponent<CircleCollider2D>();
+        col.isTrigger = true;
+        go.AddComponent<SupermarketCampusCardNpcController>();
+        Selection.activeGameObject = go;
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+    }
+
+    [MenuItem(MenuRoot + "Create Supermarket Task Root (Event + Flow Binder)", false, 32)]
+    public static void CreateSupermarketTaskRootWithBinder()
+    {
+        var go = new GameObject("SupermarketCampusCard_TaskRoot");
+        Undo.RegisterCreatedObjectUndo(go, "Create SupermarketCampusCard_TaskRoot");
+        go.AddComponent<HospitalFetchMedicineEvent>();
+        go.AddComponent<SupermarketCampusCardFlowBinder>();
+        Selection.activeGameObject = go;
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+    }
 }
 #endif
